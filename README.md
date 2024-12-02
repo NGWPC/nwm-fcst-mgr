@@ -9,7 +9,18 @@ NGEN-FCST
 A program to run ngen given the forecast forcing provided via a .nc file and a configuration file from validation with ngen-cal
 
 ## Installation
-To run the program, one would need an environment for successfulyl running ngen and its modules (including t-route). Follow the following steps to build the environment (in AWS Ubuntu 22.04 LTS Workspace):
+
+1. Clone ngen-fcst
+
+git clone -b development --recurse-submodules https://gitlab.sh.nextgenwaterprediction.com/NGWPC/nwm-ngen/ngen-fcst.git
+
+2. Build the environment
+
+To run the program, one would need an environment for successfully running ngen and its modules (including t-route).
+
+If you already have an environment for running ngen, you can use the same venv and pip install matplotlib if it is not already installed.
+
+Otherwise, follow the following steps to build a new environment (in AWS Ubuntu 22.04 LTS Workspace):
 
 1) cd [VENV_ROOT]
 2) /usr/bin/python3.11 -m venv venv.ngen
