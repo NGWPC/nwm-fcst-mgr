@@ -46,7 +46,9 @@ where [NGEN-FCST_ROOT] is where ngen-fcst is installed
 The program takes three command line arguments:
 1) Path to the NetCDF forcing file
 2) Path to the config yaml file for a validation run (from ngen-cal)
-3) Path to the folder to be created for storing inputs/outputs from running ngen
+3) Path to the folder to be created for storing inputs/outputs from running ngen, relative to the Output directory of the calibration run as indicated in the config yaml file. For example, if "fcst_run1" is the 3rd argument, and "yaml_file" in the "general" section of the config file is '/home/yuqiong.liu/work/Gitlab/run/kge_DDS/noah_cfes/01123000/Output/Validation_Run/01123000_config_valid_best.yaml', then the new output directory to be created for the ngen-fcst run would be:
+
+/home/yuqiong.liu/work/Gitlab/run/kge_DDS/noah_cfes/01123000/Output/Forecast_Run/fcst_run1
 
 ## Contributing
 State if you are open to contributions and what your requirements are for accepting them.

@@ -68,8 +68,9 @@ real_config['global']['forcing'] = dict([('path',str(forcing_file)),('provider',
 real_config['time']['start_time'] = str(start_time)
 real_config['time']['end_time'] = str(end_time)
 
-# create output directory in current run directory 
-out_dir = Path(Path(conf['general']['yaml_file']).parent.parent,'Forecst_Run/' + args.output_folder)
+# create output directory in current run directory
+out_dir0 = Path(conf['general']['yaml_file']).parent.parent.resolve(strict=True)
+out_dir = Path(out_dir0,'Forecast_Run/' + args.output_folder)
 #out_dir = Path('./', 'ngen-fcst-job' + str(conf['general']['calibration_run_id']) + '_' + datetime.now().strftime("%Y-%m-%d_%H:%M:%S"))
 out_dir.mkdir(parents=True, exist_ok=True)
 out_dir = out_dir.resolve()
