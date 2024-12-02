@@ -37,9 +37,9 @@ where [VENV_ROOT] and [NGEN_ROOT] refer to the directory to install the python v
 
 Follow the following steps to test the program:
 
-source [VENV_ROOT]/env.ngen/bin/activate
-cd [NGEN-FCST_ROOT]/ngen-fcst
-python python/run_ngen_fcst.py test_data/forcing.nc test_data/valid_config.yaml fcst_run1
+1. source [VENV_ROOT]/env.ngen/bin/activate
+2. cd [NGEN-FCST_ROOT]/ngen-fcst
+3. python python/run_ngen_fcst.py test_data/forcing.nc test_data/valid_config.yaml fcst_run1
 
 where [NGEN-FCST_ROOT] is where ngen-fcst is installed
 
