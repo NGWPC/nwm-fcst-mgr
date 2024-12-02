@@ -3,7 +3,7 @@
 
 
 ## Name
-NGEN-FCST
+ngen Forecast
 
 ## Description
 A program to run ngen given the forecast forcing provided via a .nc file and a configuration file from validation with ngen-cal
