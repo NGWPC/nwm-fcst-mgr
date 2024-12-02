@@ -11,14 +11,14 @@ A program to run ngen given the forecast forcing provided via a .nc file and a c
 ## Installation
 To run the program, one would need an environment for successfulyl running ngen and its modules (including t-route). Follow the following steps to build the environment (in AWS Ubuntu 22.04 LTS Workspace):
 
-cd [VENV_ROOT]
-/usr/bin/python3.11 -m venv venv.ngen
-source venv.ngen/bin/activate
-pip install --upgrade pip
-pip3 install numpy==1.26.4 pandas bmipy netcdf4==1.6.3 joblib toolz Cython geopandas pyarrow matplotlib deprecated 
-cd [NGEN_ROOT]/ngen/extern/t-route/
-pip install -r requirements.txt
-./compiler.sh 
+1) cd [VENV_ROOT]
+2) /usr/bin/python3.11 -m venv venv.ngen
+3) source venv.ngen/bin/activate
+4) pip install --upgrade pip
+5) pip3 install numpy==1.26.4 pandas bmipy netcdf4==1.6.3 joblib toolz Cython geopandas pyarrow matplotlib deprecated 
+6) cd [NGEN_ROOT]/ngen/extern/t-route/
+7) pip install -r requirements.txt
+8) ./compiler.sh 
 
 where [VENV_ROOT] and [NGEN_ROOT] refer to the directory to install the python virtual environment and the root directory where ngen is installed, respectively.
 
