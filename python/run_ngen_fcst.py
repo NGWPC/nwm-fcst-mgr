@@ -24,16 +24,16 @@ parser = argparse.ArgumentParser()
 
 # Add arguments
 parser.add_argument('forcing_file', type=str, help='Path to the NetCDF forcing file')
-parser.add_argument('config_file', type=str, help='Path to the config yaml file for valid_best run, e.g., 01123000_config_valid_best.yaml')
+parser.add_argument('config_file', type=str, help='Path to the config yaml file for a validation run (e.g., 01123000_config_valid_best.yaml from ngen-cal)')
+parser.add_argument('output_folder', type=str, help='Path to the folder to be created for storing inputs/outputs from running ngen')
 
 # Parse the arguments
 args = parser.parse_args()
 logger.info(f"Forcing file to use: {args.forcing_file}")
 logger.info(f"Validation config file to use: {args.config_file}")
+logger.info(f"Relative folder path to outputs: {args.output_folder}")
 
 # define forcing file and valid_best config file
-#forcing_file = Path('/home/yuqiong.liu/work/data/ngen_fcst/NextGen_Forcings_Engine_HYDROFABRIC_output_202410011200.nc')
-#config_file = Path('/home/yuqiong.liu/work/Gitlab/run/kge_DDS/noah_cfes/01123000/Output/Validation_Run/01123000_config_valid_best.yaml')
 forcing_file = Path(args.forcing_file).resolve(strict=True)
 config_file = Path(args.config_file).resolve(strict=True)
 
@@ -69,7 +69,8 @@ real_config['time']['start_time'] = str(start_time)
 real_config['time']['end_time'] = str(end_time)
 
 # create output directory in current run directory 
-out_dir = Path('./', 'ngen-fcst-job' + str(conf['general']['calibration_run_id']) + '_' + datetime.now().strftime("%Y-%m-%d_%H:%M:%S"))
+out_dir = Path(Path(conf['general']['yaml_file']).parent.parent,'Forecst_Run/' + args.output_folder)
+#out_dir = Path('./', 'ngen-fcst-job' + str(conf['general']['calibration_run_id']) + '_' + datetime.now().strftime("%Y-%m-%d_%H:%M:%S"))
 out_dir.mkdir(parents=True, exist_ok=True)
 out_dir = out_dir.resolve()
 logger.info(f'New run directory created at: {out_dir}')
