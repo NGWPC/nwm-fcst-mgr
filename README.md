@@ -10,11 +10,11 @@ A program to run ngen given the forecast forcing provided via a .nc file and a c
 
 ## Installation
 
-1. Clone ngen-fcst
+### Clone ngen-fcst
 
 git clone -b development --recurse-submodules https://gitlab.sh.nextgenwaterprediction.com/NGWPC/nwm-ngen/ngen-fcst.git
 
-2. Build the environment
+### Build the environment
 
 To run the program, one would need an environment for successfully running ngen and its modules (including t-route).
 
