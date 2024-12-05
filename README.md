@@ -50,6 +50,51 @@ The program takes three command line arguments:
 
 /home/yuqiong.liu/work/Gitlab/run/kge_DDS/noah_cfes/01123000/Output/Forecast_Run/fcst_run1
 
+## Docker container
+
+### Requirements
+
+To build and run ngen-fcst, you will need the following software installed and running on your system:
+- Docker Engine
+
+You will also need the following data:
+- a forcing file in NetCDF format
+- a YAML-formatted configuration file
+
+### Build
+
+To build the ngen-fcst container, execute the following command:
+```
+docker build --tag=ngen-fcst .
+```
+
+### Running
+
+To run the ngen-fcst applicaton, execute the following command:
+```
+docker run ngen-fcst
+```
+
+This will print a usage statement for the container:
+```
+Usage: run-ngen-fcst.sh <forcing_file> <config_file> <output_path> [log_file] [venv_path]
+
+FORCING_FILE: Path to the NetCDF forcing file.
+CONFIG_FILE: Path to the config yaml file for a validation run (from ngen-cal).
+OUTPUT_PATH: Path to the folder to be created for storing inputs/outputs from running ngen.
+LOG_FILE (optional): Path to the output file where the script's output will be saved.  Used when running in LOCAL or DOCKER environment
+VENV_PATH (optional): Path to the Python virtual environment.  Used when running in the LOCAL environment.
+
+Examples:
+  run-ngen-fcst.sh test_data/forcing.nc test_data/valid_config.yaml fcst_run1
+  run-ngen-fcst.sh test_data/forcing.nc test_data/valid_config.yaml fcst_run1 /path/to/output /path/to/venv
+```
+
+The path provided for any files should match the path within the container, as well as the paths insider your configuration file. So if `forcing.nc` is located at `~/ngencerf/data/ngen-cal-data/forcing/forcing.nc` and `valid_config.yaml` is located at `~/ngencerf/data/ngen-cal-data/configs/valid_config.yaml`, you should run the command:
+```
+docker run -v ~/ngencerf/data/ngen-cal-data/forcing/:/ngencerf/data/forcing/ -v  ~/ngencerf/data/ngen-cal-data/configs/:/ngencerf/data/configs/ ngen-fcst /ngencerf/data/forcing/forcing.nc /ngencerf/data/configs/valid_config.yaml fcst_run1
+```
+
 ## Contributing
 State if you are open to contributions and what your requirements are for accepting them.
 

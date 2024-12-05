@@ -1,0 +1,6 @@
+pandas~=2.2.3
+geopandas~=1.0.1
+PyYAML~=6.0.2
+matplotlib~=3.9.2
+netCDF4==1.6.3
+numpy~=1.26.4
