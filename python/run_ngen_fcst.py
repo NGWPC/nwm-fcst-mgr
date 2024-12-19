@@ -70,7 +70,7 @@ real_config['time']['end_time'] = str(end_time)
 
 # create output directory in Calibration Output directory
 out_dir0 = Path(conf['general']['yaml_file']).parent.parent.resolve(strict=True)
-out_dir = Path(out_dir0,'Forecast_Run/' + args.output_folder)
+out_dir = Path(out_dir0, 'Forecast_Run', args.output_folder)
 out_dir.mkdir(parents=True, exist_ok=True)
 out_dir = out_dir.resolve()
 logger.info(f'New run directory created at: {out_dir}')
@@ -154,7 +154,7 @@ ngen_exe = conf['model']['binary']
 cmd = f'{ngen_exe} {gpkg_cats} "all" {gpkg_nexus} "all" {new_real_file}'
 
 # kick off ngen run and save stdout & stderr to ngen_stdout_stderr.log
-log_file = Path(str(out_dir), 'ngen_stdout_stderr.log')
+log_file = Path(out_dir, 'ngen_stdout_stderr.log')
 with open(log_file, 'a+') as log:
     subprocess.check_call(cmd, stdout=log, stderr=log, shell=True, cwd=str(out_dir))
 
