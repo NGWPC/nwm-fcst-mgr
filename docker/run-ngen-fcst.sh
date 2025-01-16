@@ -1,6 +1,8 @@
 #!/bin/bash
+# Define valid commands
+VALID_COMMANDS=("forecast")
 
-# Run script for run_ngen_fcst.py
+# This shell script lives in the ngen-fcst repo.  It is used by CerfServer when calling ngen-fcst
 #
 # It is used by CerfServer directly when running in LOCAL mode.
 # It is used by the ngen-fcst docker container when the server is running in DOCKER or PARALLEL_WORKS mode
@@ -12,7 +14,7 @@ umask 000
 
 # Function to display help message
 show_help() {
-  echo "Usage: $(basename "$0") \<command\> \<forcing_file\> \<config_file\> \<output_dir\> [stdout_file] [venv_path]"
+  echo "Usage: $(basename "$0") <command> <forcing_file> <config_file> <output_dir> [stdout_file] [venv_path]"
   echo ""
   echo ""
   echo "COMMAND:"
@@ -20,7 +22,7 @@ show_help() {
   echo ""
   echo "FORCING_FILE: Path to the NetCDF forcing file."
   echo "CONFIG_FILE: Path to the config yaml file for a validation run (from ngen-cal)."
-  echo "OUTPUT_DIR: Path to the folder to be created for storing inputs/outputs from running ngen."
+  echo "FORECAST_DIR: Name of the folder to to store the forecast output."
   echo "STDOUT_FILE (optional): Path to the stdout file where the script's console output will be saved.  Used when running in LOCAL or DOCKER environment"
   echo "VENV_PATH (optional): Path to the Python virtual environment.  Used when running in the LOCAL environment."
   echo ""
@@ -38,7 +40,7 @@ fi
 
 # Check if the command for the script is provided as the first argument
 if [ -z "$1" ]; then
-  echo "Error: No script command provided. Allowable commands are: 'forecast'."
+  echo "Error: No script command provided. Allowable commands are: ${VALID_COMMANDS[*]}."
   show_help
 fi
 
@@ -52,7 +54,7 @@ case "$SCRIPT_COMMAND" in
     REQUIRED_ARGS=3
     ;;
   *)
-    echo "Error: Invalid script command: '$SCRIPT_COMMAND'.   Use 'calibration', 'validation', 'validation_iteration' or 'create_input'."
+    echo "Error: Invalid script command: '$SCRIPT_COMMAND'. Allowable commands are: ${VALID_COMMANDS[*]}."
     show_help
     ;;
 esac
@@ -71,12 +73,12 @@ fi
 
 FORCING_FILE=$1
 CONFIG_FILE=$2
-OUTPUT_DIR=$3
+FORECAST_DIR=$3
 shift $REQUIRED_ARGS
 
 echo "FORCING_FILE: ${FORCING_FILE}"
 echo "CONFIG_FILE: ${CONFIG_FILE}"
-echo "OUTPUT_DIR: ${OUTPUT_DIR}"
+echo "FORECAST_DIR: ${FORECAST_DIR}"
 
 # Check if the forcing data exists
 if [ ! -f "${FORCING_FILE}" ]; then
@@ -122,9 +124,9 @@ fi
 # Run the Python script, redirecting its output if an output file is provided
 echo "   Running $(basename "$SCRIPT_PATH") with input file: $CONFIG_FILE"
 if [ -z "$STDOUT_FILE" ]; then
-  python "${SCRIPT_PATH}" "${FORCING_FILE}" "${CONFIG_FILE}" "${STDOUT_DIR}"
+  python "${SCRIPT_PATH}" "${FORCING_FILE}" "${CONFIG_FILE}" "${FORECAST_DIR}"
 else
-  python "${SCRIPT_PATH}" "${FORCING_FILE}" "${CONFIG_FILE}" "${STDOUT_DIR}" &> "${STDOUT_FILE}"
+  python "${SCRIPT_PATH}" "${FORCING_FILE}" "${CONFIG_FILE}" "${FORECAST_DIR}" &> "${STDOUT_FILE}"
 fi
 
 python_exit_code=$?
