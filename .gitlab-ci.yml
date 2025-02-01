@@ -1,0 +1,73 @@
+# GitLab CI/CD configuration file for ngen repository
+include:
+  - template: Jobs/Container-Scanning.gitlab-ci.yml
+
+stages:
+  - build
+  - test
+  - deploy
+  - release
+
+image: registry.sh.nextgenwaterprediction.com/infrastructure/docker/docker:latest
+
+variables:
+    DOCKER_IMAGE_NAME: $CI_REGISTRY_IMAGE
+    DOCKER_IMAGE_TAG: $CI_COMMIT_REF_NAME-test
+
+build:
+  stage: build
+  script:
+    - echo "Building ${CI_PROJECT_NAME} docker image.. "
+    - |
+      DOCKER_ARG_PARAM=""
+      if [[ -n "$CI_COMMIT_TAG" ]]; then
+        DOCKER_ARG_PARAM="$CI_COMMIT_TAG"
+      fi
+      if [[ "$CI_COMMIT_BRANCH" == "release-candidate" ]] || [[ "$CI_COMMIT_BRANCH" == "master" ]]; then
+        DOCKER_ARG_PARAM="$CI_COMMIT_BRANCH"
+      fi
+      if [[ -n "$DOCKER_ARG_PARAM" ]]; then
+        echo "Running [ docker build --build-arg NGEN_VERSION="$DOCKER_ARG_PARAM" --tag "$DOCKER_IMAGE_NAME:$DOCKER_IMAGE_TAG" . ]"
+        docker build --build-arg NGEN_VERSION="$DOCKER_ARG_PARAM" --tag "$DOCKER_IMAGE_NAME:$DOCKER_IMAGE_TAG" .
+      else
+        echo "Running [ docker build --tag "$DOCKER_IMAGE_NAME:$DOCKER_IMAGE_TAG" . ]"
+        docker build --tag "$DOCKER_IMAGE_NAME:$DOCKER_IMAGE_TAG" .
+      fi
+    - echo "Logging in to Gitlab Container Registry..."
+    - echo $CI_JOB_TOKEN | docker login -u $CI_REGISTRY_USER --password-stdin $CI_REGISTRY
+    - docker push $DOCKER_IMAGE_NAME:$DOCKER_IMAGE_TAG
+    - docker logout
+
+container_scanning:
+  stage: test
+  needs:
+    - build
+  variables:
+    SECURE_LOG_LEVEL: info
+    CS_SEVERITY_THRESHOLD: UNKNOWN
+    CS_IMAGE: $DOCKER_IMAGE_NAME:$DOCKER_IMAGE_TAG
+
+deploy:
+  stage: deploy
+  script:
+    - echo "Logging in to Gitlab Container Registry to push the image..."
+    - echo $CI_JOB_TOKEN | docker login -u $CI_REGISTRY_USER --password-stdin $CI_REGISTRY
+    - echo "Pushing to the docker registry"
+    - docker tag $DOCKER_IMAGE_NAME:$DOCKER_IMAGE_TAG $DOCKER_IMAGE_NAME:latest
+    - docker push $DOCKER_IMAGE_NAME:latest
+    - docker logout
+  rules:
+    - if: '$CI_COMMIT_BRANCH == "development"'
+
+release:
+  stage: release
+  script:
+    - echo "Logging in to Gitlab Container Registry to push the image..."
+    - echo $CI_JOB_TOKEN | docker login -u $CI_REGISTRY_USER --password-stdin $CI_REGISTRY
+    - echo "Pushing to the docker registry"
+    - docker tag $DOCKER_IMAGE_NAME:$DOCKER_IMAGE_TAG $DOCKER_IMAGE_NAME:$CI_COMMIT_TAG
+    - docker push $DOCKER_IMAGE_NAME:$CI_COMMIT_TAG
+    - docker logout
+  rules:
+    - if: $CI_COMMIT_TAG
+
