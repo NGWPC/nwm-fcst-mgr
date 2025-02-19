@@ -126,7 +126,7 @@ echo "   Running $(basename "$SCRIPT_PATH") with input file: $CONFIG_FILE"
 if [ -z "$STDOUT_FILE" ]; then
   python "${SCRIPT_PATH}" "${FORCING_FILE}" "${CONFIG_FILE}" "${FORECAST_DIR}"
 else
-  python "${SCRIPT_PATH}" "${FORCING_FILE}" "${CONFIG_FILE}" "${FORECAST_DIR}" &> "${STDOUT_FILE}"
+  python "${SCRIPT_PATH}" "${FORCING_FILE}" "${CONFIG_FILE}" "${FORECAST_DIR}" &> "${STDOUT_FILE}" 2>&1
 fi
 
 python_exit_code=$?
