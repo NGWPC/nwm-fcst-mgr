@@ -251,7 +251,7 @@ try:
             if gage:
                 if not isinstance(gage, str):
                     gage = gage[0]
-                if gage != "" and gage==gage0:
+                if gage==gage0:
                     x_walk[id] = gage
                     break
 except FileNotFoundError:
