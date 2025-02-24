@@ -245,7 +245,7 @@ try:
 except:
     raise ValueError(f'Key model/eval_params/basinID not found in {config_file}')
 if gage0=="":
-    rasie ValueError(f'basinID in {config_file} cannot be empty')
+    raise ValueError(f'basinID in {config_file} cannot be empty')
 
 # Handle crosswalk file (in order to get the correct feature_id when reading t-route data)
 x_walk = pd.Series(dtype=object)
