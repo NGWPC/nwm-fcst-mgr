@@ -239,10 +239,17 @@ for pat1 in ['cat*.csv','nex*.csv','troute*.nc']:
         shutil.move(f1,Path(output_dir,os.path.basename(f1)))
 logger.info(f'Outputs are saved at: {output_dir}')
 
+# get gage ID and make sure it is not empty
+try:
+    gage0 = conf['model']['eval_params']['basinID']
+except:
+    raise ValueError(f'Key model/eval_params/basinID not found in {config_file}')
+if gage0=="":
+    rasie ValueError(f'basinID in {config_file} cannot be empty')
+
 # Handle crosswalk file (in order to get the correct feature_id when reading t-route data)
 x_walk = pd.Series(dtype=object)
 cwt_file = conf['model']['crosswalk']
-gage0 = conf['model']['eval_params']['basinID']
 try:
     with open(cwt_file) as fp:
         data = json.load(fp)
