@@ -11,7 +11,7 @@ general:
   restart: 0
   calibration_run_id: 206
   ngen_cerf: false
-  auth_token: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ0b2tlbl90eXBlIjoiYWNjZXNzIiwiZXhwIjoxNzI3MzgwNDg4LCJpYXQiOjE3MjcyOTQwODgsImp0aSI6IjI3NzY2NDk5YWFkZjQ4Y2NiNDk5YTU4NWJkZDJkZGRkIiwidXNlcl9pZCI6Miwic2NvcGUiOiJuZ2VuIn0.6bM9O3lyGjDxZ7B2suDP-Kq56cQZ_8ZnYKxjxsJqFMg
+  auth_token: 
 CFE: &id001
 - name: b
   min: 2.0
