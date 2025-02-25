@@ -239,6 +239,14 @@ for pat1 in ['cat*.csv','nex*.csv','troute*.nc']:
         shutil.move(f1,Path(output_dir,os.path.basename(f1)))
 logger.info(f'Outputs are saved at: {output_dir}')
 
+# get gage ID and make sure it is not empty
+try:
+    gage0 = conf['model']['eval_params']['basinID']
+except:
+    raise ValueError(f'Key model/eval_params/basinID not found in {config_file}')
+if gage0=="":
+    raise ValueError(f'basinID in {config_file} cannot be empty')
+
 # Handle crosswalk file (in order to get the correct feature_id when reading t-route data)
 x_walk = pd.Series(dtype=object)
 cwt_file = conf['model']['crosswalk']
@@ -250,12 +258,16 @@ try:
             if gage:
                 if not isinstance(gage, str):
                     gage = gage[0]
-                if gage != "":
+                if gage==gage0:
                     x_walk[id] = gage
+                    break
 except FileNotFoundError:
     raise FileNotFoundError(f"Crosswalk file '{cwt_file}' not found.")
 except json.JSONDecodeError:
     raise ValueError(f"Failed to parse JSON from crosswalk file '{cwt_file}'.")
+
+if x_walk.empty:
+    raise Exception(f'{gage0} is not found in crosswalk file {cwt_file}')
 
 # get catchment at basin outlet for reading from t-route output
 catchment_hydro_fabric = gpd.read_file(gpkg_cats, layer='divides')
@@ -276,8 +288,8 @@ output.index.name = 'Time'
 output.plot(y='sim_flow',kind='line')
 plt.xlabel('Time')
 plt.ylabel('Streamflow (m^3/s)')
-plt.savefig(Path(output_dir, gage + '_hydrograph.png'))
+plt.savefig(Path(output_dir, gage0 + '_hydrograph.png'), bbox_inches ="tight")
 
 # save streamflow simulation to csv
-output.to_csv(Path(output_dir, gage + '_output.csv'))
+output.to_csv(Path(output_dir, gage0 + '_output.csv'))
 logger.info('Run completed!')
