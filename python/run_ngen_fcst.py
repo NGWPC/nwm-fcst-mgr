@@ -18,7 +18,7 @@ import netCDF4
 import pandas as pd
 import yaml
 
-from git_util import print_git_info
+from git_util import print_git_info_all
 
 logger = logging.getLogger(__name__)
 
@@ -93,7 +93,7 @@ import argparse
 # setup the logger
 log_level_set()
 
-print_git_info()
+print_git_info_all()
 
 # set environment variable for ngencerf backend - @TODO
 #os.environ['NGEN_RESULTS_DIR'] = str(Path(agent.workdir).parent.parent)

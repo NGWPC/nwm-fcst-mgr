@@ -7,9 +7,9 @@ def transform_component(comp):
 
     The transformation rules are:
       - Always include 'commit_hash' and 'build_date'.
-      - If 'tags' is non-empty, include the 'tags' field.
+      - If 'tags' is non-empty, include the 'tags' field (renamed to 'release').
       - If 'tags' is empty, include 'branch', 'author', 'message', and 'commit_date'.
-      - Recursively transform nested 'modules' (if present) with the same rules.
+      - Recursively transform nested 'modules' (if present).
 
     :param comp: A dictionary containing Git information for a component.
     :return: A new dictionary with only the desired fields.
@@ -40,31 +40,65 @@ def transform_component(comp):
     return new_comp
 
 
-def print_git_info():
+def recursive_print(d: dict, indent: int = 0) -> None:
     """
-    Read the combined git_info.json file, transform its contents,
-    and log each key-value pair.
+    Recursively print all key/value pairs from a dictionary.
 
-    If the file is not found or contains invalid JSON, logs a warning.
+    For each key-value pair:
+      - If the value is a dictionary, print the key on one line and then recurse into that dictionary.
+      - If the value is a list, print the key on one line and then iterate through the list;
+        for each element that is a dictionary, recurse into it; otherwise print the element on a separate line.
+      - Otherwise (if the value is a string or other non-dict, non-list), print the key and value on one line.
+
+    :param d: The dictionary to print.
+    :param indent: The current indentation level (number of spaces).
     """
-    GIT_INFO = '/ngen-app/git_info.json'
+    for key, value in d.items():
+        if isinstance(value, dict):
+            print(" " * indent + f"{key}:")
+            recursive_print(value, indent + 2)
+        elif isinstance(value, list):
+            print(" " * indent + f"{key}:")
+            for item in value:
+                if isinstance(item, dict):
+                    recursive_print(item, indent + 2)
+                else:
+                    print(" " * (indent + 2) + str(item))
+        else:
+            print(" " * indent + f"{key}: {value}")
+
+
+def print_git_info(git_info_file: str):
+    """
+    Read the specified git_info JSON file, transform its contents, and log all key/value pairs recursively.
+
+    The output will print top-level keys (such as 'ngen') as well as keys for nested modules (such as 'LASAM').
+
+    :param git_info_file: Path to the JSON file containing Git information.
+    """
     try:
-        with open(GIT_INFO, 'r') as f:
+        with open(git_info_file, 'r') as f:
             git_info = json.load(f)
     except FileNotFoundError:
-        logger.warning(f'{GIT_INFO} not found')
+        print(f'{git_info_file} not found')
         return
     except json.decoder.JSONDecodeError as e:
-        print(f"Error reading {GIT_INFO}: {e}")
+        print(f"Error reading {git_info_file}: {e}")
         return
 
     if not git_info:
-        print(f"Failed to retrieve git information from {GIT_INFO}.")
+        print(f"Failed to retrieve git information from {git_info_file}.")
         return
 
-    # Assuming there is only one top-level key in the file.
-    name, git_info_content = git_info.popitem()
+    # Transform each top-level component without removing the keys.
+    transformed_git_info = {key: transform_component(value) for key, value in git_info.items()}
 
-    transformed_git_info = transform_component(git_info_content)
-    for key, value in transformed_git_info.items():
-        print(f'{key}: {value}')
+    recursive_print(transformed_git_info)
+
+
+def print_git_info_all():
+    """
+    Convenience function to print Git information from multiple JSON files.
+    """
+    print_git_info('/ngen-app/ngen-fcst_git_info.json')
+    print()
