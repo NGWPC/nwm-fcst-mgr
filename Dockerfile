@@ -23,7 +23,7 @@ RUN set -eux; \
 WORKDIR /ngen-app/ngen-fcst
 
 # Extract Git information and write it to the file specified by $GIT_INFO_PATH
-ARG GIT_INFO_PATH=/ngen-app/git_info.json
+ARG GIT_INFO_PATH=/ngen-app/ngen-fcst_git_info.json
 
 RUN jq -n \
     --arg commit_hash "$(git rev-parse HEAD)" \
