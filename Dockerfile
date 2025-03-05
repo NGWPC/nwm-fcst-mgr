@@ -1,13 +1,17 @@
 ARG  NGEN_VERSION=latest
 FROM registry.sh.nextgenwaterprediction.com/ngwpc/nwm-ngen/ngen:${NGEN_VERSION}
 
+RUN set -eux; \
+    dnf install -y \
+        jq; \
+    dnf clean all
+
 COPY requirements.txt .
 RUN set -eux; \
 	\
     pip3 install -r requirements.txt ; \
     pip3 cache purge ; \
-    rm --force requirements.txt ; \
-    dnf install  -y jq
+    rm --force requirements.txt ;
 
 
 COPY . /ngen-app/ngen-fcst/
@@ -19,7 +23,7 @@ RUN set -eux; \
 WORKDIR /ngen-app/ngen-fcst
 
 # Extract Git information and write it to the file specified by $GIT_INFO_PATH
-ENV GIT_INFO_PATH=/ngen-app/git_info.json
+ARG GIT_INFO_PATH=/ngen-app/git_info.json
 
 RUN jq -n \
     --arg commit_hash "$(git rev-parse HEAD)" \
