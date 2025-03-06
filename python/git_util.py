@@ -101,4 +101,5 @@ def print_git_info_all():
     Convenience function to print Git information from multiple JSON files.
     """
     print_git_info('/ngen-app/ngen-fcst_git_info.json')
+    print_git_info('/ngen-app/ngen_git_info.json')
     print()
