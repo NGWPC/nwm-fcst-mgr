@@ -31,7 +31,7 @@ RUN set -eux; \
     branch=$( [ -n "${CI_COMMIT_REF_NAME:-}" ] && echo "${CI_COMMIT_REF_NAME}" || git rev-parse --abbrev-ref HEAD ); \
     jq -n \
       --arg commit_hash "$(git rev-parse HEAD)" \
-      --arg branch "$(git rev-parse --abbrev-ref HEAD)" \
+      --arg branch "$branch" \
       --arg tags "$(git tag --points-at HEAD | tr '\n' ' ')" \
       --arg author "$(git log -1 --pretty=format:'%an')" \
       --arg commit_date "$(date -u -d @$(git log -1 --pretty=format:'%ct') +'%Y-%m-%d %H:%M:%S UTC')" \
