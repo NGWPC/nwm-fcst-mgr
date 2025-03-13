@@ -1,41 +1,36 @@
 import json
 
 
-def transform_component(comp):
+def transform_component(component_git_info):
     """
-    Transform a single component dictionary to include only selected Git fields.
+    Transform a single component dictionary to include only selected Git fields in a specific order:
+      - Always include 'release', 'build_date', and 'commit_hash' (in that order).
+      - If 'tags' is empty, also include 'commit_date', 'author', and 'message' (in that order) if they exist.
 
-    The transformation rules are:
-      - Always include 'commit_hash' and 'build_date'.
-      - If 'tags' is non-empty, include the 'tags' field (renamed to 'release').
-      - If 'tags' is empty, include 'branch', 'author', 'message', and 'commit_date'.
-      - Recursively transform nested 'modules' (if present).
-
-    :param comp: A dictionary containing Git information for a component.
+    :param component_git_info: A dictionary containing Git information for a component.
     :return: A new dictionary with only the desired fields.
     """
-    new_comp = {
-        "commit_hash": comp.get("commit_hash", ""),
-        "build_date": comp.get("build_date", "")
-    }
-    if comp.get("tags", "").strip() == "":
-        # If tags is empty, include branch, author, message, and commit_date.
-        new_comp["branch"] = comp.get("branch", "")
-        new_comp["author"] = comp.get("author", "")
-        new_comp["message"] = comp.get("message", "")
-        new_comp["commit_date"] = comp.get("commit_date", "")
-    else:
-        # If tags is non-empty, include tags.
-        new_comp["release"] = comp.get("tags", "")
+    new_comp = {}
 
-    # Process nested modules recursively, if present
-    if "modules" in comp and isinstance(comp["modules"], list):
-        new_modules = []
-        for module_obj in comp["modules"]:
-            # Each module is an object with one key-value pair.
-            for mod_name, mod_data in module_obj.items():
-                new_modules.append({mod_name: transform_component(mod_data)})
-        new_comp["modules"] = new_modules
+    if component_git_info.get("tags", "").strip() == "":
+        # If tags is empty, include branch, author, message, and commit_date.
+        branch = f"dev ({component_git_info.get('branch', '<unknown>')})"
+        new_comp["release"] = branch
+    else:
+        new_comp["release"] = component_git_info.get("tags", "")
+
+    # Insert keys in the desired order: build_date, then commit_hash.
+    new_comp["build_date"] = component_git_info.get("build_date", "")
+    new_comp["commit_hash"] = component_git_info.get("commit_hash", "")
+
+    # If tags is empty, add commit_date, author, and message in order, if they exist.
+    if component_git_info.get("tags", "").strip() == "":
+        if "commit_date" in component_git_info:
+            new_comp["commit_date"] = component_git_info.get("commit_date", "")
+        if "author" in component_git_info:
+            new_comp["author"] = component_git_info.get("author", "")
+        if "message" in component_git_info:
+            new_comp["message"] = component_git_info.get("message", "")
 
     return new_comp
 
@@ -72,7 +67,7 @@ def print_git_info(git_info_file: str):
     """
     Read the specified git_info JSON file, transform its contents, and log all key/value pairs recursively.
 
-    The output will print top-level keys (such as 'ngen') as well as keys for nested modules (such as 'LASAM').
+    The output will print top-level keys.
 
     :param git_info_file: Path to the JSON file containing Git information.
     """
