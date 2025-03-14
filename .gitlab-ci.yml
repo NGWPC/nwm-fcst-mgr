@@ -27,11 +27,11 @@ build:
         DOCKER_ARG_PARAM="$CI_COMMIT_BRANCH"
       fi
       if [[ -n "$DOCKER_ARG_PARAM" ]]; then
-        echo "Running [ docker build --build-arg NGEN_VERSION="$DOCKER_ARG_PARAM" --tag "$DOCKER_IMAGE_NAME:$DOCKER_IMAGE_TAG" . ]"
-        docker build --build-arg NGEN_VERSION="$DOCKER_ARG_PARAM" --tag "$DOCKER_IMAGE_NAME:$DOCKER_IMAGE_TAG" .
+        echo "Running [ docker build --build-arg CI_COMMIT_REF_NAME=${CI_COMMIT_REF_NAME} --build-arg NGEN_VERSION="$DOCKER_ARG_PARAM" --tag "$DOCKER_IMAGE_NAME:$DOCKER_IMAGE_TAG" . ]"
+        docker build --build-arg CI_COMMIT_REF_NAME=${CI_COMMIT_REF_NAME} --build-arg NGEN_VERSION="$DOCKER_ARG_PARAM" --tag "$DOCKER_IMAGE_NAME:$DOCKER_IMAGE_TAG" .
       else
-        echo "Running [ docker build --tag "$DOCKER_IMAGE_NAME:$DOCKER_IMAGE_TAG" . ]"
-        docker build --tag "$DOCKER_IMAGE_NAME:$DOCKER_IMAGE_TAG" .
+        echo "Running [ docker build --build-arg CI_COMMIT_REF_NAME=${CI_COMMIT_REF_NAME} --tag "$DOCKER_IMAGE_NAME:$DOCKER_IMAGE_TAG" . ]"
+        docker build --build-arg CI_COMMIT_REF_NAME=${CI_COMMIT_REF_NAME} --tag "$DOCKER_IMAGE_NAME:$DOCKER_IMAGE_TAG" .
       fi
     - echo "Logging in to Gitlab Container Registry..."
     - echo $CI_JOB_TOKEN | docker login -u $CI_REGISTRY_USER --password-stdin $CI_REGISTRY
