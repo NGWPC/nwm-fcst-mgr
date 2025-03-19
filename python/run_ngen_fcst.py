@@ -1,33 +1,36 @@
 # python program to run ngen for realtime forecasting given the forcing data in .nc and 
 # validation configuration file in .yaml 
 
-from pathlib import Path
-import sys
-import pandas as pd
-import geopandas as gpd
-import os
-import json
-import yaml
-import shutil
 import glob
-from datetime import datetime, timedelta
-import subprocess
-import netCDF4
-import matplotlib.pyplot as plt
+import json
 import logging
-from datetime import datetime, timezone
 import os
+import shutil
+import subprocess
+import sys
 import time
+from datetime import datetime, timezone
+from pathlib import Path
+
+import geopandas as gpd
+import matplotlib.pyplot as plt
+import netCDF4
+import pandas as pd
+import yaml
+
+from git_util import print_git_info_all
 
 logger = logging.getLogger(__name__)
+
+
 #logging.basicConfig(level=logging.INFO)
 
 #LOG = logging.getLogger(__name__)
 
-def create_timestamp() -> str: 
+def create_timestamp() -> str:
     now = datetime.now(timezone.utc)
     return now.strftime("%Y-%m-%d")
-    
+
 
 def log_level_set():
     '''
@@ -52,9 +55,9 @@ def log_level_set():
     if True:
         BASE_DIR = Path(__file__).resolve().parent.parent
 
-        if Path("/ngencerf/data").exists() :
+        if Path("/ngencerf/data").exists():
             log_file_dir = Path(f'/ngencerf/data/run-logs/ngen_fcst_{create_timestamp()}/')
-        else :
+        else:
             log_file_dir = Path(BASE_DIR) / f'run-logs/ngen_fcst_{create_timestamp()}/'
 
         log_file_name = "ngen_fcst.log"
@@ -65,7 +68,7 @@ def log_level_set():
             print(f"Logging into: {logFilePath}")
         except IOError:
             print(f"Can't Open local directory Log File: {logFilePath}", file=sys.stderr)
-        
+
         logging.Formatter.converter = time.gmtime
         logging.basicConfig(
             force=True,
@@ -73,21 +76,25 @@ def log_level_set():
             format='%(asctime)s.%(msecs)03d NGEN_FCST %(levelname)s    %(message)s',
             datefmt='%Y-%m-%dT%H:%M:%S',
             handlers=[
-            logging.FileHandler(logFilePath, mode='a'),  # Log to a file
-            #logging.StreamHandler(sys.stdout)  
-        ])
-    else:       
+                logging.FileHandler(logFilePath, mode='a'),  # Log to a file
+                #logging.StreamHandler(sys.stdout)
+            ])
+    else:
         logging.basicConfig(
             level=log_level,
             format='%(asctime)s - %(name)s - %(levelname)s - [%(filename)s:%(lineno)s - %(funcName)s]: %(message)s',
             stream=sys.stderr,
-        )  
+        )
+
 
 import argparse
 
+
 # setup the logger
 log_level_set()
-   
+
+print_git_info_all()
+
 # set environment variable for ngencerf backend - @TODO
 #os.environ['NGEN_RESULTS_DIR'] = str(Path(agent.workdir).parent.parent)
 #logging.info(f'Set environment variable NGEN_RESULTS_DIR to: {os.environ["NGEN_RESULTS_DIR"]}')
@@ -117,10 +124,10 @@ if os.path.splitext(forcing_file)[1] != '.nc':
 # read forcing to get start and end times
 ncvar = netCDF4.Dataset(forcing_file, "r")
 
-t0 = pd.to_datetime(ncvar.model_initialization_time,format="%Y-%m-%d_%H:%M:%S")
+t0 = pd.to_datetime(ncvar.model_initialization_time, format="%Y-%m-%d_%H:%M:%S")
 times = [t1 for t1 in ncvar['Time']]
 start_time = t0 + pd.Timedelta(seconds=3600)
-end_time = t0 + pd.Timedelta(seconds=(times[-1]-times[0]+60)*60)
+end_time = t0 + pd.Timedelta(seconds=(times[-1] - times[0] + 60) * 60)
 logger.info(f'Start time: {start_time}')
 logger.info(f'End time: {end_time}')
 
@@ -135,7 +142,7 @@ with open(real_file) as fp:
     real_config = json.load(fp)
 
 # update forcing in realization file
-real_config['global']['forcing'] = dict([('path',str(forcing_file)),('provider','NetCDF')])
+real_config['global']['forcing'] = dict([('path', str(forcing_file)), ('provider', 'NetCDF')])
 
 # update time period in realization file
 real_config['time']['start_time'] = str(start_time)
@@ -156,12 +163,12 @@ mod_dict = {'NoahOWP': 'noah-owp-modular', 'UEB': 'ueb'}
 startdate = start_time.strftime("%Y%m%d%H%M")
 enddate = end_time.strftime("%Y%m%d%H%M")
 
-for i1,m1 in enumerate(modules):
-    if m1['params']['model_type_name'] in ['NoahOWP','UEB']:
+for i1, m1 in enumerate(modules):
+    if m1['params']['model_type_name'] in ['NoahOWP', 'UEB']:
 
         # read the BMI config files from the source directory in the realization file
         src0 = real_config['global']['formulations'][0]['params']['modules'][i1]['params']['init_config']
-        src = Path(src0.replace('{{id}}','*'))
+        src = Path(src0.replace('{{id}}', '*'))
         dst = Path(out_dir, mod_dict[m1['params']['model_type_name']] + '_input')
         dst.mkdir(parents=True, exist_ok=True)
         for f1 in glob.glob(f'{src}'):
@@ -169,7 +176,7 @@ for i1,m1 in enumerate(modules):
                 lines = f.readlines()
 
             # update start/end times
-            for i2,l1 in enumerate(lines):
+            for i2, l1 in enumerate(lines):
                 if m1['params']['model_type_name'] == 'NoahOWP':
                     if 'startdate' in l1:
                         lines[i2] = "  " + "startdate".ljust(19) + "= " + "'" + startdate + "'" + "               ! UTC time start of simulation (YYYYMMDDhhmm)\n"
@@ -177,9 +184,9 @@ for i1,m1 in enumerate(modules):
                         lines[i2] = "  " + "enddate".ljust(19) + "= " + "'" + enddate + "'" + "               ! UTC time end of simulation (YYYYMMDDhhmm)\n"
                 elif m1['params']['model_type_name'] == 'UEB':
                     lines[8] = f'{startdate[:4]} {startdate[4:6]} {startdate[6:8]} {startdate[8:10]}.0\n'
-                    lines[9] = f'{enddate[:4]} {enddate[4:6]} {enddate[6:8]} {enddate[8:10]}.0\n'  
-            
-            # write to new BMI config files
+                    lines[9] = f'{enddate[:4]} {enddate[4:6]} {enddate[6:8]} {enddate[8:10]}.0\n'
+
+                    # write to new BMI config files
             with open(Path(dst, os.path.basename(f1)), 'w') as outfile:
                 outfile.writelines(lines)
 
@@ -193,9 +200,9 @@ with open(src) as fp1:
     rt_config = yaml.safe_load(fp1)
 
 # compute number of time steps and max_loop_size
-nts = len(pd.date_range(start=start_time, end=end_time, freq='5min'))-1
-max_loop_size = divmod(nts*300, 3600)[0]+1
-stream_output_time = divmod(nts*300, 3600)[0]+1
+nts = len(pd.date_range(start=start_time, end=end_time, freq='5min')) - 1
+max_loop_size = divmod(nts * 300, 3600)[0] + 1
+stream_output_time = divmod(nts * 300, 3600)[0] + 1
 
 # update t-route config
 rt_config['compute_parameters']['restart_parameters']['start_datetime'] = str(start_time)
@@ -234,10 +241,18 @@ with open(log_file, 'a+') as log:
 # move output files to output directory
 output_dir = Path(out_dir, "output/")
 output_dir.mkdir(parents=True, exist_ok=True)
-for pat1 in ['cat*.csv','nex*.csv','troute*.nc']:
+for pat1 in ['cat*.csv', 'nex*.csv', 'troute*.nc']:
     for f1 in glob.glob(f'{out_dir}/{pat1}'):
-        shutil.move(f1,Path(output_dir,os.path.basename(f1)))
+        shutil.move(f1, Path(output_dir, os.path.basename(f1)))
 logger.info(f'Outputs are saved at: {output_dir}')
+
+# get gage ID and make sure it is not empty
+try:
+    gage0 = conf['model']['eval_params']['basinID']
+except:
+    raise ValueError(f'Key model/eval_params/basinID not found in {config_file}')
+if gage0=="":
+    raise ValueError(f'basinID in {config_file} cannot be empty')
 
 # Handle crosswalk file (in order to get the correct feature_id when reading t-route data)
 x_walk = pd.Series(dtype=object)
@@ -250,17 +265,21 @@ try:
             if gage:
                 if not isinstance(gage, str):
                     gage = gage[0]
-                if gage != "":
+                if gage==gage0:
                     x_walk[id] = gage
+                    break
 except FileNotFoundError:
     raise FileNotFoundError(f"Crosswalk file '{cwt_file}' not found.")
 except json.JSONDecodeError:
     raise ValueError(f"Failed to parse JSON from crosswalk file '{cwt_file}'.")
 
+if x_walk.empty:
+    raise Exception(f'{gage0} is not found in crosswalk file {cwt_file}')
+
 # get catchment at basin outlet for reading from t-route output
 catchment_hydro_fabric = gpd.read_file(gpkg_cats, layer='divides')
 catchment_hydro_fabric.set_index('id', inplace=True)
-nexus_id = catchment_hydro_fabric.loc[x_walk.index[0].replace('cat','wb')]['toid']
+nexus_id = catchment_hydro_fabric.loc[x_walk.index[0].replace('cat', 'wb')]['toid']
 wb_lst = [x.split('-')[1] for x in list(catchment_hydro_fabric.query('toid==@nexus_id').index)]
 
 # read troute output
@@ -268,16 +287,16 @@ file1 = glob.glob(f'{output_dir}/troute*.nc')[0]
 ncvar = netCDF4.Dataset(file1, "r")
 fid_index = [list(ncvar['feature_id'][0:]).index(int(fid)) for fid in wb_lst]
 output = pd.DataFrame(data={'sim_flow': pd.DataFrame(ncvar['flow'][fid_index], index=fid_index).T.sum(axis=1)})
-t0 = pd.to_datetime(ncvar.file_reference_time,format="%Y-%m-%d_%H:%M:%S")
-output.index = [t0+pd.Timedelta(seconds=int(t1)) for t1 in ncvar['time']]
+t0 = pd.to_datetime(ncvar.file_reference_time, format="%Y-%m-%d_%H:%M:%S")
+output.index = [t0 + pd.Timedelta(seconds=int(t1)) for t1 in ncvar['time']]
 output.index.name = 'Time'
 
 # plot the hydrograph
-output.plot(y='sim_flow',kind='line')
+output.plot(y='sim_flow', kind='line')
 plt.xlabel('Time')
 plt.ylabel('Streamflow (m^3/s)')
-plt.savefig(Path(output_dir, gage + '_hydrograph.png'))
+plt.savefig(Path(output_dir, gage0 + '_hydrograph.png'), bbox_inches ="tight")
 
 # save streamflow simulation to csv
-output.to_csv(Path(output_dir, gage + '_output.csv'))
+output.to_csv(Path(output_dir, gage0 + '_output.csv'))
 logger.info('Run completed!')
