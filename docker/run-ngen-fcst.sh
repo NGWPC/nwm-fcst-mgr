@@ -81,7 +81,7 @@ echo "CONFIG_FILE: ${CONFIG_FILE}"
 echo "FORECAST_DIR: ${FORECAST_DIR}"
 
 # Check if the forcing data exists
-if [ ! -f "${FORCING_FILE}" ]; then
+if [[ ! -f "${FORCING_FILE}" && ! -d "${FORCING_FILE}" ]]; then
   echo "Forcing data not found at ${FORCING_FILE}"
 fi
 

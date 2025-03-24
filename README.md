@@ -44,7 +44,7 @@ Follow the following steps to test the program:
 where [NGEN-FCST_ROOT] is where ngen-fcst is installed
 
 The program takes three command line arguments:
-1) Path to the NetCDF forcing file
+1) Path to the NetCDF forcing file or folder containing csv forcing files for all catchments in the basin
 2) Path to the config yaml file for a validation run (from ngen-cal)
 3) Path to the folder to be created for storing inputs/outputs from running ngen, relative to the Output directory of the calibration run as indicated in the config yaml file. For example, if "fcst_run1" is the 3rd argument, and "yaml_file" in the "general" section of the config file is '/home/yuqiong.liu/work/Gitlab/run/kge_DDS/noah_cfes/01123000/Output/Validation_Run/01123000_config_valid_best.yaml', then the new output directory to be created for the ngen-fcst run would be:
 
@@ -79,7 +79,7 @@ This will print a usage statement for the container:
 ```
 Usage: run-ngen-fcst.sh <forcing_file> <config_file> <output_path> [log_file] [venv_path]
 
-FORCING_FILE: Path to the NetCDF forcing file.
+FORCING_FILE: Path to the NetCDF forcing file or a folder containing csv forcing files for all catchments in the basin.
 CONFIG_FILE: Path to the config yaml file for a validation run (from ngen-cal).
 OUTPUT_PATH: Path to the folder to be created for storing inputs/outputs from running ngen.
 LOG_FILE (optional): Path to the output file where the script's output will be saved.  Used when running in LOCAL or DOCKER environment
