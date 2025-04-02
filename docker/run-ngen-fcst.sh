@@ -14,13 +14,13 @@ umask 000
 
 # Function to display help message
 show_help() {
-  echo "Usage: $(basename "$0") <command> <forcing_file> <config_file> <output_dir> [stdout_file] [venv_path]"
+  echo "Usage: $(basename "$0") <command> <forcing_path> <config_file> <output_dir> [stdout_file] [venv_path]"
   echo ""
   echo ""
   echo "COMMAND:"
   echo "  forecast          Run forecast script."
   echo ""
-  echo "FORCING_FILE: Path to the NetCDF forcing file."
+  echo "FORCING_PATH: Path to the directory container csv forcing files."
   echo "CONFIG_FILE: Path to the config yaml file for a validation run (from ngen-cal)."
   echo "FORECAST_DIR: Name of the folder to to store the forecast output."
   echo "STDOUT_FILE (optional): Path to the stdout file where the script's console output will be saved.  Used when running in LOCAL or DOCKER environment"
@@ -71,18 +71,18 @@ if [ $# -lt $REQUIRED_ARGS ]; then
   show_help
 fi
 
-FORCING_FILE=$1
+FORCING_PATH=$1
 CONFIG_FILE=$2
 FORECAST_DIR=$3
 shift $REQUIRED_ARGS
 
-echo "FORCING_FILE: ${FORCING_FILE}"
+echo "FORCING_PATH: ${FORCING_PATH}"
 echo "CONFIG_FILE: ${CONFIG_FILE}"
 echo "FORECAST_DIR: ${FORECAST_DIR}"
 
 # Check if the forcing data exists
-if [[ ! -f "${FORCING_FILE}" && ! -d "${FORCING_FILE}" ]]; then
-  echo "Forcing data not found at ${FORCING_FILE}"
+if [[ ! -f "${FORCING_PATH}" && ! -d "${FORCING_PATH}" ]]; then
+  echo "Forcing data not found at ${FORCING_PATH}"
 fi
 
 # Check if the configuration file exists
@@ -124,9 +124,9 @@ fi
 # Run the Python script, redirecting its output if an output file is provided
 echo "   Running $(basename "$SCRIPT_PATH") with input file: $CONFIG_FILE"
 if [ -z "$STDOUT_FILE" ]; then
-  python "${SCRIPT_PATH}" "${FORCING_FILE}" "${CONFIG_FILE}" "${FORECAST_DIR}"
+  python "${SCRIPT_PATH}" "${FORCING_PATH}" "${CONFIG_FILE}" "${FORECAST_DIR}"
 else
-  python "${SCRIPT_PATH}" "${FORCING_FILE}" "${CONFIG_FILE}" "${FORECAST_DIR}" &> "${STDOUT_FILE}" 2>&1
+  python "${SCRIPT_PATH}" "${FORCING_PATH}" "${CONFIG_FILE}" "${FORECAST_DIR}" &> "${STDOUT_FILE}" 2>&1
 fi
 
 python_exit_code=$?
