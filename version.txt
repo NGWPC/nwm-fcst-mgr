@@ -1,3 +1,0 @@
-version=1.2.0-rc1
-date=2025-03-14
-commit=1ac6958edd1ad266abd2e0b5ba1c16940bd14663

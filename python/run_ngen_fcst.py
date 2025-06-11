@@ -1,4 +1,4 @@
-# python program to run ngen for realtime forecasting given the forcing data in .nc and 
+# python program to run ngen for realtime forecasting given the forcing data (in either NetCDF or CSV format )
 # validation configuration file in .yaml 
 
 import glob
@@ -7,92 +7,23 @@ import logging
 import os
 import shutil
 import subprocess
-import sys
-import time
-from datetime import datetime, timezone
 from pathlib import Path
 
-import geopandas as gpd
 import matplotlib.pyplot as plt
-import netCDF4
-import pandas as pd
 import yaml
-
-from git_util import print_git_info_all
-
-logger = logging.getLogger(__name__)
-
-
-#logging.basicConfig(level=logging.INFO)
-
-#LOG = logging.getLogger(__name__)
-
-def create_timestamp() -> str:
-    now = datetime.now(timezone.utc)
-    return now.strftime("%Y-%m-%d")
-
-
-def log_level_set():
-    '''
-    Set logging level and specify logger configuration.
-    
-    Arguments
-    ---------
-    input_parameters (dict): User input logging parameters
-    
-    Returns
-    -------
-    None
-    
-    Notes
-    -----
-    In the absense of user-specified logging level, level defaults to DEBUG
-    See also https://docs.python.org/3/library/logging.html
-    
-    '''
-
-    log_level = 'INFO'
-    if True:
-        BASE_DIR = Path(__file__).resolve().parent.parent
-
-        if Path("/ngencerf/data").exists():
-            log_file_dir = Path(f'/ngencerf/data/run-logs/ngen_fcst_{create_timestamp()}/')
-        else:
-            log_file_dir = Path(BASE_DIR) / f'run-logs/ngen_fcst_{create_timestamp()}/'
-
-        log_file_name = "ngen_fcst.log"
-        os.makedirs(log_file_dir, exist_ok=True)
-        logFilePath = os.path.join(log_file_dir, log_file_name)
-        try:
-            logFile = open(logFilePath, "a")
-            print(f"Logging into: {logFilePath}")
-        except IOError:
-            print(f"Can't Open local directory Log File: {logFilePath}", file=sys.stderr)
-
-        logging.Formatter.converter = time.gmtime
-        logging.basicConfig(
-            force=True,
-            level=log_level,
-            format='%(asctime)s.%(msecs)03d NGEN_FCST %(levelname)s    %(message)s',
-            datefmt='%Y-%m-%dT%H:%M:%S',
-            handlers=[
-                logging.FileHandler(logFilePath, mode='a'),  # Log to a file
-                #logging.StreamHandler(sys.stdout)
-            ])
-    else:
-        logging.basicConfig(
-            level=log_level,
-            format='%(asctime)s - %(name)s - %(levelname)s - [%(filename)s:%(lineno)s - %(funcName)s]: %(message)s',
-            stream=sys.stderr,
-        )
-
-
 import argparse
 
+from git_util import print_git_info_all
+from log_level import log_level_set
+from process_forcing import update_forcing_in_realization
+from update_bmi_config import update_noah_ueb, update_troute
+from read_output import read_troute_output
 
 # setup the logger
 log_level_set()
+logger = logging.getLogger(__name__)
 
+# print git hash info
 print_git_info_all()
 
 # set environment variable for ngencerf backend - @TODO
@@ -103,132 +34,57 @@ print_git_info_all()
 parser = argparse.ArgumentParser()
 
 # Add arguments
-parser.add_argument('forcing_file', type=str, help='Path to the NetCDF forcing file')
+parser.add_argument('forcing_file', type=str, help=('Path to the NetCDF forcing file OR '
+                      'a folder containing .csv forcing files for all catchments'))
 parser.add_argument('config_file', type=str, help='Path to the config yaml file for a validation run (e.g., 01123000_config_valid_best.yaml from ngen-cal)')
 parser.add_argument('output_folder', type=str, help='Path to the folder to be created for storing inputs/outputs from running ngen')
 
 # Parse the arguments
 args = parser.parse_args()
-logger.info(f"Forcing file to use: {args.forcing_file}")
+logger.info(f"Forcing file(s) to use: {args.forcing_file}")
 logger.info(f"Validation config file to use: {args.config_file}")
 logger.info(f"Relative folder path to outputs: {args.output_folder}")
 
-# define forcing file and valid_best config file
-forcing_file = Path(args.forcing_file).resolve(strict=True)
-config_file = Path(args.config_file).resolve(strict=True)
-
-# make sure forcing file exists as netcdf
-if os.path.splitext(forcing_file)[1] != '.nc':
-    logger.warning(f'{forcing_file} does not have .nc extension. Assuming it is a netcdf file')
-
-# read forcing to get start and end times
-ncvar = netCDF4.Dataset(forcing_file, "r")
-
-t0 = pd.to_datetime(ncvar.model_initialization_time, format="%Y-%m-%d_%H:%M:%S")
-times = [t1 for t1 in ncvar['Time']]
-start_time = t0 + pd.Timedelta(seconds=3600)
-end_time = t0 + pd.Timedelta(seconds=(times[-1] - times[0] + 60) * 60)
-logger.info(f'Start time: {start_time}')
-logger.info(f'End time: {end_time}')
-
-# read yaml configuration file for best validation
+# Read the yaml-based configuration file (from a previous ngen-cal validation run)
+config_file = Path(args.config_file).absolute()
+if not config_file.exists():
+    raise FileNotFoundError(f'Config fiel {config_file} does not exist!')
 with open(config_file) as file:
     conf = yaml.safe_load(file)
 
-# read the realization file
+# create output directory 
+out_dir0 = Path(conf['general']['yaml_file']).parent.parent.resolve(strict=True)
+out_dir = Path(out_dir0, 'Forecast_Run', args.output_folder)
+out_dir.mkdir(parents=True, exist_ok=True)
+logger.info(f'New run directory created at: {out_dir}')
+
+# read realization file
 real_file = Path(conf['model']['realization'])
 real_file.resolve(strict=True)
 with open(real_file) as fp:
     real_config = json.load(fp)
 
-# update forcing in realization file
-real_config['global']['forcing'] = dict([('path', str(forcing_file)), ('provider', 'NetCDF')])
+# get hydrofabric gpkg
+gpkg_cats = conf['model']['catchments']
+gpkg_nexus = conf['model']['nexus']
 
-# update time period in realization file
-real_config['time']['start_time'] = str(start_time)
-real_config['time']['end_time'] = str(end_time)
+# get ngen executable
+ngen_exe = conf['model']['binary']
 
-# create output directory in Calibration Output directory
-out_dir0 = Path(conf['general']['yaml_file']).parent.parent.resolve(strict=True)
-out_dir = Path(out_dir0, 'Forecast_Run', args.output_folder)
-out_dir.mkdir(parents=True, exist_ok=True)
-out_dir = out_dir.resolve()
-logger.info(f'New run directory created at: {out_dir}')
+# Update forcing and time related info in realization file
+real_config = update_forcing_in_realization(Path(args.forcing_file), real_config, gpkg_cats)
 
-# for noah-owp-modular & UEB, update path to BMI config files in realization file
-# as well as start/end times in BMI config files 
-modules = real_config['global']['formulations'][0]['params']['modules']
-mod_dict = {'NoahOWP': 'noah-owp-modular', 'UEB': 'ueb'}
+# For UEB and Noah-OWP-Modular, create new BMI config files with new time info, and
+# update path to BMI configs in realization file accordingly 
+real_config = update_noah_ueb(real_config, out_dir)
 
-startdate = start_time.strftime("%Y%m%d%H%M")
-enddate = end_time.strftime("%Y%m%d%H%M")
-
-for i1, m1 in enumerate(modules):
-    if m1['params']['model_type_name'] in ['NoahOWP', 'UEB']:
-
-        # read the BMI config files from the source directory in the realization file
-        src0 = real_config['global']['formulations'][0]['params']['modules'][i1]['params']['init_config']
-        src = Path(src0.replace('{{id}}', '*'))
-        dst = Path(out_dir, mod_dict[m1['params']['model_type_name']] + '_input')
-        dst.mkdir(parents=True, exist_ok=True)
-        for f1 in glob.glob(f'{src}'):
-            with open(f1) as f:
-                lines = f.readlines()
-
-            # update start/end times
-            for i2, l1 in enumerate(lines):
-                if m1['params']['model_type_name'] == 'NoahOWP':
-                    if 'startdate' in l1:
-                        lines[i2] = "  " + "startdate".ljust(19) + "= " + "'" + startdate + "'" + "               ! UTC time start of simulation (YYYYMMDDhhmm)\n"
-                    elif 'enddate' in l1:
-                        lines[i2] = "  " + "enddate".ljust(19) + "= " + "'" + enddate + "'" + "               ! UTC time end of simulation (YYYYMMDDhhmm)\n"
-                elif m1['params']['model_type_name'] == 'UEB':
-                    lines[8] = f'{startdate[:4]} {startdate[4:6]} {startdate[6:8]} {startdate[8:10]}.0\n'
-                    lines[9] = f'{enddate[:4]} {enddate[4:6]} {enddate[6:8]} {enddate[8:10]}.0\n'
-
-                    # write to new BMI config files
-            with open(Path(dst, os.path.basename(f1)), 'w') as outfile:
-                outfile.writelines(lines)
-
-        # replace path to BMI config file in realization file
-        real_config['global']['formulations'][0]['params']['modules'][i1]['params']['init_config'] = str(Path(dst, os.path.basename(src0)))
-
-# For t-route, update path to config file as well as time-related info in the config file
-src = Path(real_config['routing']['t_route_config_file_with_path'])
-src.resolve(strict=True)
-with open(src) as fp1:
-    rt_config = yaml.safe_load(fp1)
-
-# compute number of time steps and max_loop_size
-nts = len(pd.date_range(start=start_time, end=end_time, freq='5min')) - 1
-max_loop_size = divmod(nts * 300, 3600)[0] + 1
-stream_output_time = divmod(nts * 300, 3600)[0] + 1
-
-# update t-route config
-rt_config['compute_parameters']['restart_parameters']['start_datetime'] = str(start_time)
-rt_config['compute_parameters']['forcing_parameters']['nts'] = nts
-rt_config['compute_parameters']['forcing_parameters']['max_loop_size'] = max_loop_size
-rt_config['output_parameters']['stream_output']['stream_output_time'] = stream_output_time
-
-# write to new t-route config file
-new_file = Path(out_dir, os.path.basename(src))
-with open(new_file, 'w') as file:
-    yaml.dump(rt_config, file, sort_keys=False, default_flow_style=False, indent=4)
-
-# update path to new t-route config in realization
-real_config['routing']['t_route_config_file_with_path'] = str(new_file)
+# Do the same for t-route
+real_config = update_troute(real_config, out_dir)
 
 # save the new realization file
 new_real_file = Path(out_dir, os.path.basename(real_file))
 with open(new_real_file, 'w') as outfile:
     json.dump(real_config, outfile, indent=4, separators=(", ", ": "), sort_keys=False)
-
-# hydrofabric gpkg
-gpkg_cats = conf['model']['catchments']
-gpkg_nexus = conf['model']['nexus']
-
-# ngen executable
-ngen_exe = conf['model']['binary']
 
 # run command
 cmd = f'{ngen_exe} {gpkg_cats} "all" {gpkg_nexus} "all" {new_real_file}'
@@ -254,42 +110,9 @@ except:
 if gage0=="":
     raise ValueError(f'basinID in {config_file} cannot be empty')
 
-# Handle crosswalk file (in order to get the correct feature_id when reading t-route data)
-x_walk = pd.Series(dtype=object)
-cwt_file = conf['model']['crosswalk']
-try:
-    with open(cwt_file) as fp:
-        data = json.load(fp)
-        for id, values in data.items():
-            gage = values.get('Gage_no')
-            if gage:
-                if not isinstance(gage, str):
-                    gage = gage[0]
-                if gage==gage0:
-                    x_walk[id] = gage
-                    break
-except FileNotFoundError:
-    raise FileNotFoundError(f"Crosswalk file '{cwt_file}' not found.")
-except json.JSONDecodeError:
-    raise ValueError(f"Failed to parse JSON from crosswalk file '{cwt_file}'.")
-
-if x_walk.empty:
-    raise Exception(f'{gage0} is not found in crosswalk file {cwt_file}')
-
-# get catchment at basin outlet for reading from t-route output
-catchment_hydro_fabric = gpd.read_file(gpkg_cats, layer='divides')
-catchment_hydro_fabric.set_index('id', inplace=True)
-nexus_id = catchment_hydro_fabric.loc[x_walk.index[0].replace('cat', 'wb')]['toid']
-wb_lst = [x.split('-')[1] for x in list(catchment_hydro_fabric.query('toid==@nexus_id').index)]
-
-# read troute output
-file1 = glob.glob(f'{output_dir}/troute*.nc')[0]
-ncvar = netCDF4.Dataset(file1, "r")
-fid_index = [list(ncvar['feature_id'][0:]).index(int(fid)) for fid in wb_lst]
-output = pd.DataFrame(data={'sim_flow': pd.DataFrame(ncvar['flow'][fid_index], index=fid_index).T.sum(axis=1)})
-t0 = pd.to_datetime(ncvar.file_reference_time, format="%Y-%m-%d_%H:%M:%S")
-output.index = [t0 + pd.Timedelta(seconds=int(t1)) for t1 in ncvar['time']]
-output.index.name = 'Time'
+# read troute output file
+outfile = glob.glob(f'{output_dir}/troute*.nc')[0]
+output = read_troute_output(gage0, conf['model']['crosswalk'], gpkg_cats, outfile)
 
 # plot the hydrograph
 output.plot(y='sim_flow', kind='line')
