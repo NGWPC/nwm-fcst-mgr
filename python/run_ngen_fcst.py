@@ -48,7 +48,7 @@ logger.info(f"Relative folder path to outputs: {args.output_folder}")
 # Read the yaml-based configuration file (from a previous ngen-cal validation run)
 config_file = Path(args.config_file).absolute()
 if not config_file.exists():
-    raise FileNotFoundError(f'Config fiel {config_file} does not exist!')
+    raise FileNotFoundError(f'Config file {config_file} does not exist!')
 with open(config_file) as file:
     conf = yaml.safe_load(file)
 
