@@ -1,0 +1,92 @@
+name: CI/CD Pipeline
+
+on:
+  push:
+    branches: [ "**" ]
+    tags: [ "*" ]
+  pull_request:
+    branches: [ main ]
+
+env:
+  DOCKER_IMAGE_NAME: ghcr.io/${{ github.repository }}
+  DOCKER_IMAGE_TAG: ${{ github.ref_name }}
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run placeholder tests
+        run: echo "No unit tests / coverage defined yet — please add tests."
+
+  build:
+    runs-on: ubuntu-latest
+    needs: test
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Normalize DOCKER_IMAGE_NAME to lowercase (fix for capitalized org)
+        run: echo "DOCKER_IMAGE_NAME=${DOCKER_IMAGE_NAME,,}" >> $GITHUB_ENV
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and Push Docker Image
+        shell: bash
+        run: |
+          DOCKER_ARG_PARAM="latest"
+          if [[ "${GITHUB_REF_TYPE}" == "tag" ]]; then
+            DOCKER_ARG_PARAM="${GITHUB_REF_NAME}"
+          fi
+          if [[ "${GITHUB_REF_NAME}" == "release-candidate" || "${GITHUB_REF_NAME}" == "master" ]]; then
+            DOCKER_ARG_PARAM="${GITHUB_REF_NAME}"
+          fi
+
+          BASE_IMAGE="ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/ngen:${DOCKER_ARG_PARAM}"
+
+          echo "Building with BASE_IMAGE=$BASE_IMAGE"
+
+          docker build \
+            --build-arg BASE_IMAGE=$BASE_IMAGE \
+            --build-arg CI_COMMIT_REF_NAME=${GITHUB_REF_NAME} \
+            --tag $DOCKER_IMAGE_NAME:$DOCKER_IMAGE_TAG .
+
+          docker push $DOCKER_IMAGE_NAME:$DOCKER_IMAGE_TAG
+
+  deploy:
+    runs-on: ubuntu-latest
+    needs: build
+    if: github.ref_name == 'development'
+    steps:
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Push :latest tag
+        run: |
+          docker pull $DOCKER_IMAGE_NAME:$DOCKER_IMAGE_TAG
+          docker tag $DOCKER_IMAGE_NAME:$DOCKER_IMAGE_TAG $DOCKER_IMAGE_NAME:latest
+          docker push $DOCKER_IMAGE_NAME:latest
+
+  release:
+    runs-on: ubuntu-latest
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/')
+    steps:
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Push tag version
+        run: |
+          docker pull $DOCKER_IMAGE_NAME:$DOCKER_IMAGE_TAG
+          docker tag $DOCKER_IMAGE_NAME:$DOCKER_IMAGE_TAG $DOCKER_IMAGE_NAME:${GITHUB_REF_NAME}
+          docker push $DOCKER_IMAGE_NAME:${GITHUB_REF_NAME}

@@ -1,5 +1,7 @@
-ARG  NGEN_VERSION=latest
-FROM registry.sh.nextgenwaterprediction.com/ngwpc/nwm-ngen/ngen:${NGEN_VERSION}
+# Default value, can be overridden at build time
+ARG BASE_IMAGE=ghcr.io/ngwpc/ngen:latest
+
+FROM ${BASE_IMAGE}
 
 RUN set -eux; \
     dnf install -y \
