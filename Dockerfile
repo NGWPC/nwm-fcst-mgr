@@ -1,5 +1,5 @@
-ARG  NGEN_VERSION=latest
-FROM registry.sh.nextgenwaterprediction.com/ngwpc/nwm-ngen/ngen:${NGEN_VERSION}
+ARG  NGEN_IMAGE_TAG=latest
+FROM ghcr.io/ngwpc/ngen:${NGEN_IMAGE_TAG}
 
 RUN set -eux; \
     dnf install -y \
@@ -47,4 +47,4 @@ RUN set -eux; \
 
 WORKDIR /
 
-ENTRYPOINT [ "/ngen-app/bin/run-ngen-fcst.sh" ] 
+ENTRYPOINT [ "/ngen-app/bin/run-ngen-fcst.sh" ]
