@@ -183,15 +183,14 @@ def parse_args():
 
     # Add arguments
     parser.add_argument('valid_yaml', type=str, help=('Path to validation yaml file from previous run of nwm-cal-mgr'))
-    parser.add_argument('fcst_real', type=str, help=('Path to forecast period realization file'))
-    parser.add_argument('cold_start_real', type=str, nargs="?", default=None, help=('Path to cold_start period realization file'))
+    parser.add_argument('real_path', type=str, help=('Path to cold start or forecast period realization file'))
 
     return parser.parse_args()
 
 
 def main():
     args = parse_args()
-    run_fcst(args.valid_yaml, args.fcst_real, args.cold_start_real)
+    run_fcst(args.valid_yaml, args.real_path)
 
 
 if __name__ == "__main__":
