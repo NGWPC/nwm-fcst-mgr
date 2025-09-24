@@ -21,29 +21,22 @@ log_level_set()
 logger = logging.getLogger(__name__)
 
 
-def run_fcst(valid_yaml: str, fcst_real: str, cold_start_real: str | None = None):
+def run_fcst(valid_yaml: str, real_path: str):
     """
     Execute ngen run for forecast period and cold start period (if provided)
+    
+    valid_yaml: path to validation yaml file from past calibration run
+    real_path: path to realizattion file for a cold start or forecast period
     """
 
     # Read validation yaml file
     valid_config = load_yaml(valid_yaml)
 
-    # Retrieve forecast output_dir
-    fcst_real_path = Path(fcst_real)
-    real_path_list = [fcst_real_path]
-    out_dir_list = [fcst_real_path.parent]
+    logger.info(f'Validation file loaded from: {valid_yaml}')
 
-    # Gather paths for cold start and forecast runs
-    real_path_list = [fcst_real_path]
-
-    # Load cold start realization file if it is provided
-    if cold_start_real:
-
-        # Retrieve cold_start output_dir
-        cold_start_real_path = Path(cold_start_real)
-        real_path_list.append(cold_start_real_path)
-        out_dir_list.append(cold_start_real_path.parent)
+    # Retrieve output_dir
+    real_file = Path(real_path)
+    out_dir = real_file.parent
 
     # Retrieve hydrofabric gpkg
     gpkg_cats = valid_config['model']['catchments']
@@ -65,56 +58,35 @@ def run_fcst(valid_yaml: str, fcst_real: str, cold_start_real: str | None = None
             logger.critical(e)
             raise
 
-    # Reverse realization and out_dir lists to process cold start first
-    real_path_list = list(reversed(real_path_list))
-    out_dir_list = list(reversed(out_dir_list))
+    # Execute ngen run for either cold-start or forecast period
+    cmd = f'{ngen_exe} {gpkg_cats} "all" {gpkg_nexus} "all" {real_path}'
 
-    print(f"real_path_list: {real_path_list}")
-    print(f"out_dir_list: {out_dir_list}")
+    # kick off ngen run and save stdout & stderr to ngen_stdout_stderr.log
+    log_file = out_dir / "ngen_stdout_stderr.log"
+    with open(log_file, 'a+') as log:
+        subprocess.check_call(cmd, stdout=log, stderr=log, shell=True, cwd=str(out_dir))
 
-    # Execute ngen run for both cold-start (if it exists) and forecast period
-    for i in range(len(real_path_list)):
+    # move output files to output directory
+    run_output_dir = out_dir / "output/"
+    run_output_dir.mkdir(parents=True, exist_ok=True)
+    for pat1 in ['cat*.csv', 'nex*.csv', 'troute*.nc']:
+        for f1 in glob.glob(f'{out_dir}/{pat1}'):
+            shutil.move(f1, Path(run_output_dir, os.path.basename(f1)))
 
-        # Retrieve realization and output directory paths
-        real_path = real_path_list[i]
-        out_dir = out_dir_list[i]
+    # read troute output file
+    outfile = glob.glob(f'{run_output_dir}/troute*.nc')[0]
+    output = read_troute_output(gage0, valid_config['model']['crosswalk'], gpkg_cats, outfile)
 
-        # Run ngen
-        cmd = f'{ngen_exe} {gpkg_cats} "all" {gpkg_nexus} "all" {real_path}'
+    # plot the hydrograph
+    output.plot(y='sim_flow', kind='line')
+    plt.xlabel('Time')
+    plt.ylabel('Streamflow (m^3/s)')
+    plt.savefig(Path(run_output_dir, gage0 + '_hydrograph.png'), bbox_inches="tight")
 
-        # kick off ngen run and save stdout & stderr to ngen_stdout_stderr.log
-        log_file = out_dir / "ngen_stdout_stderr.log"
-        with open(log_file, 'a+') as log:
-            subprocess.check_call(cmd, stdout=log, stderr=log, shell=True, cwd=str(out_dir))
+    # save streamflow simulation to csv
+    output.to_csv(Path(run_output_dir, gage0 + '_output.csv'))
 
-        # move output files to output directory
-        run_output_dir = out_dir / "output/"
-        run_output_dir.mkdir(parents=True, exist_ok=True)
-        for pat1 in ['cat*.csv', 'nex*.csv', 'troute*.nc']:
-            for f1 in glob.glob(f'{out_dir}/{pat1}'):
-                shutil.move(f1, Path(run_output_dir, os.path.basename(f1)))
-        if i == 0 and cold_start_real is not None:
-            logger.info(f'Cold start NGEN run outputs are saved at: {run_output_dir}')
-        else:
-            logger.info(f'Forecast NGEN run outputs are saved at: {run_output_dir}')
-
-        # read troute output file
-        outfile = glob.glob(f'{run_output_dir}/troute*.nc')[0]
-        output = read_troute_output(gage0, valid_config['model']['crosswalk'], gpkg_cats, outfile)
-
-        # plot the hydrograph
-        output.plot(y='sim_flow', kind='line')
-        plt.xlabel('Time')
-        plt.ylabel('Streamflow (m^3/s)')
-        plt.savefig(Path(run_output_dir, gage0 + '_hydrograph.png'), bbox_inches="tight")
-
-        # save streamflow simulation to csv
-        output.to_csv(Path(run_output_dir, gage0 + '_output.csv'))
-
-        if i == 0 and cold_start_real is not None:
-            logger.info("Cold start NGEN run completed.")
-        else:
-            logger.info("Forecast NGEN run completed.")
+    logger.info(f'Fcst-mgr NGEN run outputs are saved at: {run_output_dir}')
 
 
 def load_yaml(file_path: str) -> dict:
