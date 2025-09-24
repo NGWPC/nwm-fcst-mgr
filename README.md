@@ -46,17 +46,15 @@ The program takes three arguments:
 Nwm-fcst-mgr can be run from the CLI or from Python code directly. 
 
 ### Python
-from nwm_fcst_mgr.forecast import run_fcst
-valid_yaml = '~/ngwpc/run_ngen/kge_dds/noah_cfes/01123000/Output/Validation_Run/01123000_config_valid_best.yaml'
-fcst_real = '~/home/jeff.wade~/ngwpc/run_ngen/kge_dds/noah_cfes/01123000/Output/Forecast_Run/fcst_run1/01123000_realization_config_bmi_fcst.json'
-cold_start_real = '~/ngwpc/run_ngen/kge_dds/noah_cfes/01123000/Output/Cold_Start_Run/fcst_run1/01123000_realization_config_bmi_cold_start.json'
-run_fcst(valid_yaml=valid_yaml, fcst_real=fcst_real, cold_start_real=cold_start_real)
+1. from nwm_fcst_mgr.forecast import run_fcst
+2. valid_yaml = '~/ngwpc/run_ngen/kge_dds/noah_cfes/01123000/Output/Validation_Run/01123000_config_valid_best.yaml'
+3. real_path = '~/ngwpc/run_ngen/kge_dds/noah_cfes/01123000/Output/Forecast_Run/fcst_run1/01123000_realization_config_bmi_fcst.json'
+4. run_fcst(valid_yaml=valid_yaml, real_path=real_path)
 
-If the user does not wish to run a cold_start_period, then the call to the nwm-fcst-mgr would be:
-run_fcst(valid_yaml=valid_yaml, fcst_real=fcst_real)
+If the user wishes to run a cold_start_period, then real_path would be replaced by the path to the cold start realization file.
 
 ### CLI
-python -m nwm_fcst_mgr.forecast valid_yaml fcst_real cold_start_real
+python -m nwm_fcst_mgr.forecast valid_yaml real_path
 
 where the arguments are replaced by the paths above.
 
