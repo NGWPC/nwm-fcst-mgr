@@ -1,18 +1,15 @@
+# syntax=docker/dockerfile:1.4
 ARG  NGEN_IMAGE_TAG=latest
 FROM ghcr.io/ngwpc/ngen:${NGEN_IMAGE_TAG}
+
+# Uncomment when building ngen locally or if ngen-int image is available locally
+# modify to use image tag for local ngen image if needed
+#FROM ngen-int
 
 RUN set -eux; \
     dnf install -y \
         jq; \
     dnf clean all
-
-COPY requirements.txt .
-RUN set -eux; \
-	\
-    pip3 install -r requirements.txt ; \
-    pip3 cache purge ; \
-    rm --force requirements.txt ;
-
 
 COPY . /ngen-app/ngen-fcst/
 COPY ./docker/run-ngen-fcst.sh /ngen-app/bin/
@@ -21,6 +18,10 @@ RUN set -eux; \
     chmod +x /ngen-app/bin/run-ngen-fcst.sh
 
 WORKDIR /ngen-app/ngen-fcst
+
+RUN set -eux; \
+    pip3 install . ; \
+    pip3 cache purge ;
 
 ARG CI_COMMIT_REF_NAME
 
