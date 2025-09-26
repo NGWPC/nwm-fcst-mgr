@@ -1,27 +1,38 @@
 # syntax=docker/dockerfile:1.4
-ARG  NGEN_IMAGE_TAG=latest
-FROM ghcr.io/ngwpc/ngen:${NGEN_IMAGE_TAG}
+#ARG  NGEN_IMAGE_TAG=latest
+#FROM ghcr.io/ngwpc/ngen:${NGEN_IMAGE_TAG}
 
 # Uncomment when building ngen locally or if ngen-int image is available locally
 # modify to use image tag for local ngen image if needed
-#FROM ngen-int
+FROM ngen-int
+
+# Activate the existing virtual environment
+ENV PATH="/ngen-app/ngen-python/bin:${PATH}"
 
 RUN set -eux; \
-    dnf install -y \
-        jq; \
+    dnf install -y jq; \
     dnf clean all
 
 COPY . /ngen-app/ngen-fcst/
 COPY ./docker/run-ngen-fcst.sh /ngen-app/bin/
+
 RUN set -eux; \
-	\
     chmod +x /ngen-app/bin/run-ngen-fcst.sh
 
 WORKDIR /ngen-app/ngen-fcst
 
+# Install missing dependencies that aren't in base image
+RUN --mount=type=cache,target=/root/.cache/pip,id=pip-cache \
+    set -eux; \
+    pip3 install \
+        "matplotlib~=3.10.6"; \
+        #"geopandas~=1.1.1"; \
+    pip3 cache purge
+
+# Install into the existing virtual environment without upgrading base packages
 RUN set -eux; \
-    pip3 install . ; \
-    pip3 cache purge ;
+    pip3 install --no-deps . || pip3 install .; \
+    pip3 cache purge;
 
 ARG CI_COMMIT_REF_NAME
 
