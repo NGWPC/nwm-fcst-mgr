@@ -26,7 +26,7 @@ def run_fcst(valid_yaml: str, real_path: str):
     Execute ngen run for forecast period and cold start period (if provided)
     
     valid_yaml: path to validation yaml file from past calibration run
-    real_path: path to realizattion file for a cold start or forecast period
+    real_path: path to realization file for a cold start or forecast period
     """
 
     # Read validation yaml file

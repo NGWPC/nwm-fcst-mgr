@@ -1,34 +1,37 @@
 #!/bin/bash
-# Define valid commands
-VALID_COMMANDS=("forecast")
 
-# This shell script lives in the ngen-fcst repo.  It is used by CerfServer when calling ngen-fcst
+# Define valid commands
+VALID_COMMANDS=("cold_start" "forecast")
+
+# This shell script lives in the nwm-fcst-mgr repo.  It is used by CerfServer when calling nwm-fcst-mgr
 #
 # It is used by CerfServer directly when running in LOCAL mode.
-# It is used by the ngen-fcst docker container when the server is running in DOCKER or PARALLEL_WORKS mode
+# It is used by the nwm-fcst-mgr docker container when the server is running in DOCKER or PARALLEL_WORKS mode
 
-FORECAST_SCRIPT=/ngen-app/ngen-fcst/python/run_ngen_fcst.py
+FORECAST_SCRIPT=nwm_fcst_mgr.forecast
+COLD_START_SCRIPT=nwm_fcst_mgr.forecast
 
 # Set the umask so files and directories are created with 777 permissions
 umask 000
 
 # Function to display help message
 show_help() {
-  echo "Usage: $(basename "$0") <command> <forcing_dir> <config_file> <output_dir> [stdout_file] [venv_path]"
-  echo ""
+  echo "Usage: $(basename "$0") <command> <validation_yaml> <realization_file> [stdout_file] [venv_path]"
   echo ""
   echo "COMMAND:"
-  echo "  forecast          Run forecast script."
+  echo "  forecast    Run forecast script (requires validation_yaml + forecast_realization)."
+  echo "  cold_start  Run cold start script (requires validation_yaml + cold_start_realization)."
   echo ""
-  echo "FORCING_DIR: Path to the directory container csv forcing files."
-  echo "CONFIG_FILE: Path to the config yaml file for a validation run (from ngen-cal)."
-  echo "FORECAST_DIR: Name of the folder to to store the forecast output."
+  echo "VALIDATION_YAML: Path to the config yaml file for a validation run (from MSWM)."
+  echo "FORECAST_REALIZATION: (Required for forecast) Path to the forecast realization file."
+  echo "COLD_START_REALIZATION: (Required for cold_start) Path to the cold start realization file."
   echo "STDOUT_FILE (optional): Path to the stdout file where the script's console output will be saved.  Used when running in LOCAL or DOCKER environment"
   echo "VENV_PATH (optional): Path to the Python virtual environment.  Used when running in the LOCAL environment."
   echo ""
   echo "Examples:"
-  echo "  $(basename "$0") forecast test_data/forcing.nc test_data/valid_config.yaml fcst_run1"
-  echo "  $(basename "$0") forecast test_data/forcing.nc test_data/valid_config.yaml fcst_run1 /path/to/output/ngen-fcst.log /path/to/venv"
+  echo "  $(basename "$0") forecast validation.yaml realization.yaml"
+  echo "  $(basename "$0") cold_start validation.yaml cold_start_realization.yaml"
+  echo "  $(basename "$0") forecast validation.yaml realization.yaml cold_start_realization.yaml"
   echo ""
   exit 1
 }
@@ -40,7 +43,7 @@ fi
 
 # Check if the command for the script is provided as the first argument
 if [ -z "$1" ]; then
-  echo "Error: No script command provided. Allowable commands are: ${VALID_COMMANDS[*]}."
+  echo "[run-ngen-fcst.sh] Error: No script command provided. Allowable commands are: ${VALID_COMMANDS[*]}."
   show_help
 fi
 
@@ -51,48 +54,51 @@ shift 1
 case "$SCRIPT_COMMAND" in
   "forecast")
     SCRIPT_PATH=$FORECAST_SCRIPT
-    REQUIRED_ARGS=3
+    REQUIRED_ARGS=2
+    ;;
+  "cold_start")
+    SCRIPT_PATH=$COLD_START_SCRIPT
+    REQUIRED_ARGS=2
     ;;
   *)
-    echo "Error: Invalid script command: '$SCRIPT_COMMAND'. Allowable commands are: ${VALID_COMMANDS[*]}."
+    echo "[run-ngen-fcst.sh] Error: Invalid script command: '$SCRIPT_COMMAND'. Allowable commands are: ${VALID_COMMANDS[*]}."
     show_help
     ;;
 esac
 
-# Check if the selected script exists
-if [ ! -f "$SCRIPT_PATH" ]; then
-  echo "Error: Script not found at $SCRIPT_PATH"
-  exit 1
-fi
-
 # Check if the correct number of arguments are provided for the selected command
 if [ $# -lt $REQUIRED_ARGS ]; then
-  echo "Error: Insufficient arguments. $SCRIPT_COMMAND requires $REQUIRED_ARGS arguments."
+  echo "[run-ngen-fcst.sh] Error: Insufficient arguments. $SCRIPT_COMMAND requires $REQUIRED_ARGS arguments."
   show_help
 fi
 
-FORCING_DIR=$1
-CONFIG_FILE=$2
-FORECAST_DIR=$3
-shift $REQUIRED_ARGS
+VALIDATION_YAML=$1
+REALIZATION_FILE=$2
+shift 2
 
-echo "FORCING_DIR: ${FORCING_DIR}"
-echo "CONFIG_FILE: ${CONFIG_FILE}"
-echo "FORECAST_DIR: ${FORECAST_DIR}"
+echo "[run-ngen-fcst.sh]  VALIDATION_YAML: ${VALIDATION_YAML}"
+echo "[run-ngen-fcst.sh] REALIZATION_FILE: ${REALIZATION_FILE}"
 
-# Check if the forcing data exists
-if [[ ! -f "${FORCING_DIR}" && ! -d "${FORCING_DIR}" ]]; then
-  echo "Forcing data not found at ${FORCING_DIR}"
+# File existence checks (fatal if missing)
+if [[ ! -f "${VALIDATION_YAML}" && ! -d "${VALIDATION_YAML}" ]]; then
+  echo "[run-ngen-fcst.sh] Fatal: Config file not found at ${VALIDATION_YAML}"
+  exit 1
 fi
 
-# Check if the configuration file exists
-if [ ! -f "${CONFIG_FILE}" ]; then
-  echo "Configuration file not found at ${CONFIG_FILE}"
+if [ ! -f "${REALIZATION_FILE}" ]; then
+  if [ "$SCRIPT_COMMAND" == "forecast" ]; then
+    echo "[run-ngen-fcst.sh] Fatal: Forecast realization file not found at ${REALIZATION_FILE}"
+  else
+    echo "[run-ngen-fcst.sh] Fatal: Cold start realization file not found at ${REALIZATION_FILE}"
+  fi
+  exit 1
 fi
 
+# Handle optional stdout file
+STDOUT_FILE=""
 if [ $# -ge 1 ]; then
   STDOUT_FILE=$1
-  echo "Output file: $STDOUT_FILE"
+  echo "[run-ngen-fcst.sh] Output file: $STDOUT_FILE"
 
   # Create output directory if it doesn't exist
   STDOUT_DIR=$(dirname "$STDOUT_FILE")
@@ -103,9 +109,11 @@ if [ $# -ge 1 ]; then
   shift 1
 fi
 
+# Handle optional virtual environment
+VENV_PATH=""
 if [ $# -ge 1 ]; then
   VENV_PATH=$1
-  echo "Virtual environment: $VENV_PATH"
+  echo "[run-ngen-fcst.sh] Virtual environment: $VENV_PATH"
   shift 1
 fi
 
@@ -114,34 +122,35 @@ if [ -n "$VENV_PATH" ]; then
   if [ -d "$VENV_PATH/bin" ]; then
     source "$VENV_PATH/bin/activate"
   else
-    echo "Error: Virtual environment path '$VENV_PATH' is invalid."
+    echo "[run-ngen-fcst.sh] Fatal: Virtual environment path '$VENV_PATH' is invalid."
     exit 1
   fi
 else
-  echo "No virtual environment provided, running with default Python environment."
+  echo "[run-ngen-fcst.sh] No virtual environment provided, running with default Python environment."
 fi
 
 # Run the Python script, redirecting its output if an output file is provided
-echo "   Running $(basename "$SCRIPT_PATH") with input file: $CONFIG_FILE"
+echo "[run-ngen-fcst.sh] Running $SCRIPT_PATH ($SCRIPT_COMMAND) with inputs: ${VALIDATION_YAML} ${REALIZATION_FILE}"
+
 if [ -z "$STDOUT_FILE" ]; then
-  python "${SCRIPT_PATH}" "${FORCING_DIR}" "${CONFIG_FILE}" "${FORECAST_DIR}"
+  python -m $SCRIPT_PATH "$VALIDATION_YAML" "$REALIZATION_FILE"
 else
-  python "${SCRIPT_PATH}" "${FORCING_DIR}" "${CONFIG_FILE}" "${FORECAST_DIR}" &> "${STDOUT_FILE}" 2>&1
+  python -m $SCRIPT_PATH "$VALIDATION_YAML" "$REALIZATION_FILE" &> "$STDOUT_FILE" 2>&1
 fi
 
 python_exit_code=$?
 if [ $python_exit_code -ne 0 ]; then
-  echo "$(basename "$SCRIPT_PATH") exited with code $python_exit_code"
+  echo "[run-ngen-fcst.sh] $SCRIPT_PATH exited with code $python_exit_code"
 fi
 
 # Display output if redirected to a file
 if [ -n "$STDOUT_FILE" ]; then
-  echo "Output from running $(basename "$SCRIPT_PATH")"
+  echo "Output from running $SCRIPT_PATH"
   echo "-------------- start of $STDOUT_FILE -----------------------------"
   cat "$STDOUT_FILE"
   echo "---------------- end of $STDOUT_FILE -----------------------------"
 fi
 
-echo "Done running $(basename "$SCRIPT_PATH")"
+echo "[run-ngen-fcst.sh] Done running $SCRIPT_PATH"
 
 exit $python_exit_code
