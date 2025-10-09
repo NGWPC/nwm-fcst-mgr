@@ -24,7 +24,6 @@ logger = logging.getLogger(__name__)
 def run_fcst(valid_yaml: str, real_path: str):
     """
     Execute ngen run for forecast period and cold start period (if provided)
-    
     valid_yaml: path to validation yaml file from past calibration run
     real_path: path to realization file for a cold start or forecast period
     """
@@ -61,10 +60,14 @@ def run_fcst(valid_yaml: str, real_path: str):
     # Execute ngen run for either cold-start or forecast period
     cmd = f'{ngen_exe} {gpkg_cats} "all" {gpkg_nexus} "all" {real_path}'
 
+    logger.info(f'Initializing NGEN run from:  {real_path}')
+
     # kick off ngen run and save stdout & stderr to ngen_stdout_stderr.log
     log_file = out_dir / "ngen_stdout_stderr.log"
     with open(log_file, 'a+') as log:
         subprocess.check_call(cmd, stdout=log, stderr=log, shell=True, cwd=str(out_dir))
+
+    logger.info('NGEN run completed successfully')
 
     # move output files to output directory
     run_output_dir = out_dir / "output/"
@@ -73,20 +76,27 @@ def run_fcst(valid_yaml: str, real_path: str):
         for f1 in glob.glob(f'{out_dir}/{pat1}'):
             shutil.move(f1, Path(run_output_dir, os.path.basename(f1)))
 
+    logger.info(f'NGEN outputs moved to: {run_output_dir}')
+
     # read troute output file
     outfile = glob.glob(f'{run_output_dir}/troute*.nc')[0]
     output = read_troute_output(gage0, valid_config['model']['crosswalk'], gpkg_cats, outfile)
 
+    logger.info(f'Reading T-route output file: {outfile}')
+
     # plot the hydrograph
+    plot_path = Path(run_output_dir, gage0 + '_hydrograph.png')
     output.plot(y='sim_flow', kind='line')
     plt.xlabel('Time')
     plt.ylabel('Streamflow (m^3/s)')
-    plt.savefig(Path(run_output_dir, gage0 + '_hydrograph.png'), bbox_inches="tight")
+    plt.savefig(plot_path, bbox_inches="tight")
+
+    logger.info(f'Hydrograph plot saved to: {plot_path}')
 
     # save streamflow simulation to csv
     output.to_csv(Path(run_output_dir, gage0 + '_output.csv'))
 
-    logger.info(f'Fcst-mgr NGEN run outputs are saved at: {run_output_dir}')
+    logger.info(f'Fcst-mgr NGEN run outputs saved at: {run_output_dir}')
 
 
 def load_yaml(file_path: str) -> dict:
@@ -152,13 +162,19 @@ def read_troute_output(
                     if gage == gage0:
                         x_walk[id] = gage
                         break
-    except FileNotFoundError:
-        raise FileNotFoundError(f"Crosswalk file '{cwt_file}' not found.")
-    except json.JSONDecodeError:
-        raise ValueError(f"Failed to parse JSON from crosswalk file '{cwt_file}'.")
+    except FileNotFoundError as e:
+        logger.critical(f'Crosswalk file not found: {cwt_file}\n{e}')
+        raise
+    except json.JSONDecodeError as e:
+        logger.critical(f'Failed to parse JSON from crosswalk file: {cwt_file}\n{e}')
+        raise
 
     if x_walk.empty:
-        raise Exception(f'{gage0} is not found in crosswalk file {cwt_file}')
+        try:
+            raise Exception(f'{gage0} is not found in crosswalk file {cwt_file}')
+        except Exception as e:
+            logger.critical(e)
+            raise
 
     # get catchment at basin outlet for reading from t-route output
     catchment_hydro_fabric = gpd.read_file(gpkg_file, layer='divides')
