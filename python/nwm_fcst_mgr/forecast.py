@@ -13,8 +13,8 @@ import matplotlib.pyplot as plt
 import yaml
 import argparse
 
-# from git_util import print_git_info_all
 from nwm_fcst_mgr.log_level import log_level_set
+from nwm_fcst_mgr.git_util import print_git_info_all
 
 # setup the logger
 log_level_set()
@@ -64,8 +64,15 @@ def run_fcst(valid_yaml: str, real_path: str):
 
     # kick off ngen run and save stdout & stderr to ngen_stdout_stderr.log
     log_file = out_dir / "ngen_stdout_stderr.log"
-    with open(log_file, 'a+') as log:
-        subprocess.check_call(cmd, stdout=log, stderr=log, shell=True, cwd=str(out_dir))
+    try:
+        with open(log_file, 'a+') as log:
+            subprocess.check_call(cmd, stdout=log, stderr=log, shell=True, cwd=str(out_dir))
+    except subprocess.CalledProcessError as e:
+        logger.critical(f'Ngen run failed with return code {e.returncode}. Command: {e.cmd}')
+        raise
+    except Exception as e:
+        logger.critical(f'Ngen run failed while running command: {e}')
+        raise
 
     logger.info('NGEN run completed successfully')
 
@@ -210,4 +217,5 @@ def main():
 
 
 if __name__ == "__main__":
+    print_git_info_all()
     main()
