@@ -1,0 +1,21 @@
+[build-system]
+requires = ["setuptools>=65", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "nwm_fcst_mgr"
+version = "0.1.1"           # or mark as dynamic if you use setuptools-scm
+requires-python = ">=3.10"
+dependencies = [
+  "geopandas~=1.1.1",
+  "pandas~=2.3.1",
+  "netCDF4==1.6.3",
+  "matplotlib~=3.10.6",
+  "PyYAML~=6.0.2",
+]
+
+[tool.setuptools]
+package-dir = {"" = "python"}
+
+[tool.setuptools.packages.find]
+where = ["python"]

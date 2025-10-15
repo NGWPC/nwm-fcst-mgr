@@ -1,4 +1,7 @@
 import json
+import logging
+
+logger = logging.getLogger(__name__)
 
 
 def transform_component(component_git_info):
@@ -50,17 +53,17 @@ def recursive_print(d: dict, indent: int = 0) -> None:
     """
     for key, value in d.items():
         if isinstance(value, dict):
-            print(" " * indent + f"{key}:")
+            logger.info(" " * indent + f"{key}:")
             recursive_print(value, indent + 2)
         elif isinstance(value, list):
-            print(" " * indent + f"{key}:")
+            logger.info(" " * indent + f"{key}:")
             for item in value:
                 if isinstance(item, dict):
                     recursive_print(item, indent + 2)
                 else:
-                    print(" " * (indent + 2) + str(item))
+                    logger.info(" " * (indent + 2) + str(item))
         else:
-            print(" " * indent + f"{key}: {value}")
+            logger.info(" " * indent + f"{key}: {value}")
 
 
 def print_git_info(git_info_file: str):
@@ -72,21 +75,23 @@ def print_git_info(git_info_file: str):
     :param git_info_file: Path to the JSON file containing Git information.
     """
     try:
-        with open(git_info_file, 'r') as f:
+        with open(git_info_file, "r") as f:
             git_info = json.load(f)
     except FileNotFoundError:
-        print(f'{git_info_file} not found')
+        logger.warning(f"{git_info_file} not found")
         return
     except json.decoder.JSONDecodeError as e:
-        print(f"Error reading {git_info_file}: {e}")
+        logger.warning(f"Error reading {git_info_file}: {e}")
         return
 
     if not git_info:
-        print(f"Failed to retrieve git information from {git_info_file}.")
+        logger.error(f"Failed to retrieve git information from {git_info_file}.")
         return
 
     # Transform each top-level component without removing the keys.
-    transformed_git_info = {key: transform_component(value) for key, value in git_info.items()}
+    transformed_git_info = {
+        key: transform_component(value) for key, value in git_info.items()
+    }
 
     recursive_print(transformed_git_info)
 
@@ -95,6 +100,7 @@ def print_git_info_all():
     """
     Convenience function to print Git information from multiple JSON files.
     """
-    print_git_info('/ngen-app/ngen-fcst_git_info.json')
-    print_git_info('/ngen-app/ngen_git_info.json')
-    print()
+    print_git_info("/ngen-app/nwm-fcst-mgr_git_info.json")
+    print_git_info("/ngen-app/ngen-bmi-forcing_git_info.json")
+    print_git_info("/ngen-app/ngen_git_info.json")
+    logger.info(" ")
