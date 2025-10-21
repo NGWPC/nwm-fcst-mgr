@@ -20,6 +20,7 @@ from nwm_fcst_mgr.log_level import log_level_set
 from nwm_fcst_mgr.git_util import print_git_info_all
 from nwm_fcst_mgr.exceptions import NgenCalledProcessError, NgenIntentionallyStoppedError
 from nwm_fcst_mgr.utils import set_os_env_key, OS_ENV_KEY_RESULTS_DIR
+from mswm.build_inputs import RealizationBuilder
 
 # setup the logger
 log_level_set()
@@ -123,11 +124,11 @@ class ForecastExecutionManager:
             self.proc.poll()
             if self.proc.returncode is None:
                 raise RuntimeError(f"Expected process to have already stopped since status = {self._status}, but it has not")
-            logger.debug(f"ngen has already stopped")
+            logger.debug("ngen has already stopped")
             return
-        
+
         if self.proc is None:
-            raise RuntimeError(f"self.proc not initialized")
+            raise RuntimeError("self.proc not initialized")
 
         logger.info("Intentionally stopping ngen...")
         stop_timeout_sec = 5
@@ -404,21 +405,43 @@ def read_troute_output(
     return output
 
 
+def fcst_workflow(input_path, valid_yaml, fcst_run_name, use_cold_start):
+    # Run forecast workflow with optional cold start
+    # Generate msw-mgr inputs for cold start run
+    if use_cold_start:
+        rb = RealizationBuilder(input_path=input_path, valid_yaml=valid_yaml,
+                                fcst_run_name=fcst_run_name, use_cold_start=True)
+        cold_start_real_path = rb.build_fcst_realization()
+
+        # Run cold start
+        run_fcst(valid_yaml, cold_start_real_path)
+
+    # Generate msw-mgr inputs for forecast run
+    rb = RealizationBuilder(input_path=input_path, valid_yaml=valid_yaml,
+                            fcst_run_name=fcst_run_name, use_cold_start=False)
+    fcst_real_path = rb.build_fcst_realization()
+
+    # Run forecast
+    run_fcst(valid_yaml, fcst_real_path)
+
+
 def parse_args():
     # Create command line parser
     parser = argparse.ArgumentParser()
 
     # Add arguments
+    parser.add_argument('input_path', str, help('Path to input.config file for forecast'))
     parser.add_argument('valid_yaml', type=str, help=('Path to validation yaml file from previous run of nwm-cal-mgr'))
-    parser.add_argument('real_path', type=str, help=('Path to cold start or forecast period realization file'))
+    parser.add_argument("fcst_run_name", help="Name of the folder to be created for storing inputs/outputs from running ngen")
+    parser.add_argument("--use_cold_start", action="store_true", help="Enable cold start flag when passed")
 
     return parser.parse_args()
 
 
 def main():
     args = parse_args()
-
-    run_fcst(args.valid_yaml, args.real_path)
+    fcst_workflow(input_path=args.input_path, valid_yaml=args.valid_yaml,
+                  fcst_run_name=args.fcst_run_name, use_cold_start=args.use_cold_start)
 
 
 if __name__ == "__main__":
