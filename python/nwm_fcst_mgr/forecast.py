@@ -20,7 +20,7 @@ from nwm_fcst_mgr.log_level import log_level_set
 from nwm_fcst_mgr.git_util import print_git_info_all
 from nwm_fcst_mgr.exceptions import NgenCalledProcessError, NgenIntentionallyStoppedError
 from nwm_fcst_mgr.utils import set_os_env_key, OS_ENV_KEY_RESULTS_DIR
-from mswm.build_inputs import RealizationBuilder
+from mswm.manager import build_fcst
 
 # setup the logger
 log_level_set()
@@ -409,20 +409,36 @@ def fcst_workflow(input_path, valid_yaml, fcst_run_name, use_cold_start):
     # Run forecast workflow with optional cold start
     # Generate msw-mgr inputs for cold start run
     if use_cold_start:
-        rb = RealizationBuilder(input_path=input_path, valid_yaml=valid_yaml,
-                                fcst_run_name=fcst_run_name, use_cold_start=True)
-        cold_start_real_path = rb.build_fcst_realization()
+        cold_start_real_path = build_fcst(input_path=input_path, valid_yaml=valid_yaml,
+                                          fcst_run_name=fcst_run_name, use_cold_start=True)
 
         # Run cold start
         run_fcst(valid_yaml, cold_start_real_path)
 
     # Generate msw-mgr inputs for forecast run
-    rb = RealizationBuilder(input_path=input_path, valid_yaml=valid_yaml,
-                            fcst_run_name=fcst_run_name, use_cold_start=False)
-    fcst_real_path = rb.build_fcst_realization()
+    fcst_real_path = build_fcst(input_path=input_path, valid_yaml=valid_yaml,
+                                fcst_run_name=fcst_run_name, use_cold_start=False)
 
     # Run forecast
     run_fcst(valid_yaml, fcst_real_path)
+
+
+def hindcast_workflow(input_path, valid_yaml, fcst_run_name, use_cold_start, use_int_ana):
+    # Run hindcast workflow with optional cold start and intermediate ana
+    # Generate msw-mgr inputs for cold start run
+    if use_cold_start:
+        cold_start_real_path = build_fcst(input_path=input_path, valid_yaml=valid_yaml,
+                                          fcst_run_name=fcst_run_name, use_cold_start=True)
+
+        # Run cold start
+        run_fcst(valid_yaml, cold_start_real_path)
+
+    if use_int_ana:
+        int_ana_real_path = build_fcst(input_path=input_path, valid_yaml=valid_yaml,
+                                       fcst_run_name=fcst_run_name, use_int_ana=True)
+
+        # Run intermediate ana to generate hindcasting model states
+        run_fcst(valid_yaml, int_ana_real_path)
 
 
 def parse_args():
@@ -434,6 +450,7 @@ def parse_args():
     parser.add_argument('valid_yaml', type=str, help=('Path to validation yaml file from previous run of nwm-cal-mgr'))
     parser.add_argument("fcst_run_name", help="Name of the folder to be created for storing inputs/outputs from running ngen")
     parser.add_argument("--use_cold_start", action="store_true", help="Enable cold start flag when passed")
+    parser.add_argument("--use_int_ana", action="store_true", help="Enable intermediate ana flag when passed")
 
     return parser.parse_args()
 
