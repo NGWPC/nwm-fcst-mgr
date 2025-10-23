@@ -28,6 +28,12 @@ def run_fcst(valid_yaml: str, real_path: str):
     real_path: path to realization file for a cold start or forecast period
     """
 
+    # set environment variable for ngencerf backend
+    os.environ["NGEN_RESULTS_DIR"] = str(Path(real_path).parent)
+    logging.info(
+        f"Set environment variable NGEN_RESULTS_DIR to: {os.environ['NGEN_RESULTS_DIR']}"
+    )
+
     # Read validation yaml file
     valid_config = load_yaml(valid_yaml)
 
@@ -213,6 +219,7 @@ def parse_args():
 
 def main():
     args = parse_args()
+
     run_fcst(args.valid_yaml, args.real_path)
 
 
