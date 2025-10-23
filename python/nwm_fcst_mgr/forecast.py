@@ -417,14 +417,17 @@ def fcst_workflow(input_path, valid_yaml, fcst_run_name, use_cold_start):
 
     # Generate msw-mgr inputs for forecast run
     fcst_real_path = build_fcst(input_path=input_path, valid_yaml=valid_yaml,
-                                fcst_run_name=fcst_run_name, use_cold_start=False)
+                                fcst_run_name=fcst_run_name)
 
     # Run forecast
     run_fcst(valid_yaml, fcst_real_path)
 
-
-def hindcast_workflow(input_path, valid_yaml, fcst_run_name, use_cold_start, use_int_ana):
-    # Run hindcast workflow with optional cold start and intermediate ana
+def hindcast_workflow(input_path, valid_yaml, fcst_run_name, use_cold_start=False, use_int_ana=False,
+                      cycle_interval=None, num_intervals=None):
+    """"
+    Run hindcast workflow with optional cold start and intermediate ana runs
+    Accepts cycle interval and number of intervals for repeated hindcasts
+    """
     # Generate msw-mgr inputs for cold start run
     if use_cold_start:
         cold_start_real_path = build_fcst(input_path=input_path, valid_yaml=valid_yaml,
