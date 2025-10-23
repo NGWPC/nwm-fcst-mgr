@@ -406,13 +406,13 @@ def fcst_workflow(input_path, valid_yaml, fcst_run_name, use_cold_start=False):
     """
     Run forecast workflow with optional cold start run
     """
-
     logger.info(f'Initializing forecast run from: {valid_yaml}')
 
     # Generate msw-mgr inputs for cold start run
     if use_cold_start:
         cold_start_real_path = build_fcst(input_path=input_path, valid_yaml=valid_yaml,
                                           fcst_run_name=fcst_run_name, use_cold_start=True)
+        logger.info(f"Cold start realization file written to: {cold_start_real_path}")
 
         # Run cold start
         run_fcst(valid_yaml, cold_start_real_path)
@@ -434,6 +434,8 @@ def hindcast_workflow(input_path, valid_yaml, fcst_run_name, use_cold_start=Fals
     Run hindcast workflow with optional cold start and intermediate ana runs
     Accepts cycle interval and number of intervals for repeated hindcasts
     """
+    logger.info(f'Initializing hindcast runs from: {valid_yaml}')
+
     # Generate msw-mgr inputs for cold start run
     if use_cold_start:
 
@@ -456,6 +458,7 @@ def hindcast_workflow(input_path, valid_yaml, fcst_run_name, use_cold_start=Fals
 
         # Run intermediate ana to generate hindcasting model states
         run_fcst(valid_yaml, int_ana_real_path)
+        logger.info("Intermediate AnA ngen run completed")
 
     # Generate hindcast interval times in hours
     hind_interval = list(range(0, num_iterations, cycle_interval))
@@ -475,6 +478,7 @@ def hindcast_workflow(input_path, valid_yaml, fcst_run_name, use_cold_start=Fals
 
         # Run hindcasting period
         run_fcst(valid_yaml, hind_real_path)
+        logger.info(f"Hindcast run {hind_cycle} ngen run completed")
 
 
 def parse_args():
