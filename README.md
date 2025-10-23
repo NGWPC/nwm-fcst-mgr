@@ -1,7 +1,7 @@
 # nwm-fcst-mgr
 
 ## Description
-A program to execute ngen cold start and forecast runs provided a configuration file from validation with nwm-cal-mgr and realization files for the cold start and forecast periods
+A program to execute forecast and hindcast runs runs provided a configuration file from a past calibration run by the nwm-cal-mgr.
 
 ## Installation
 
@@ -38,13 +38,15 @@ Follow the following steps to test the program:
 
 where [NWM-FCST-MGR_ROOT] is where nwm-fcst-mgr is installed.
 
-The program takes four arguments for a forecast run:
-1) Path to input.config file for forecast
-2) Path to the config yaml file for a validation run (from nwm-cal-mgr)
-3) Name of the folder to be created for storing inputs/outputs from running ngen
-4) Optional flag to enable a cold start run
+#### Forecast Run
 
-Nwm-fcst-mgr can be run from the CLI or from Python code directly. 
+The program takes four arguments for a forecast run:
+1) input_path: Path to input.config file for forecast
+2) valid_yaml: Path to the config yaml file for a validation run (from nwm-cal-mgr)
+3) fcst_run_name: Name of the folder to be created for storing inputs/outputs from running ngen
+4) --use_cold_start: Optional boolean flag to enable a cold start run
+
+Nwm-fcst-mgr in forecast mode can be run from the CLI or from Python code directly. The forecast manager will automatically handle calls to the Model Setup Workflow Manager to setup cold start and forecast runs and execute those runs through calls to Ngen.
 
 ### Python
 1. from nwm_fcst_mgr.forecast import fcst_workflow
@@ -56,7 +58,36 @@ Nwm-fcst-mgr can be run from the CLI or from Python code directly.
 
 
 ### CLI
-python -m nwm_fcst_mgr.forecast input_path valid_yaml fcst_run_name --use_cold_start
+python -m nwm_fcst_mgr.forecast fcst_workflow input_path valid_yaml fcst_run_name --use_cold_start
+
+where the arguments are replaced by the paths above.
+
+#### Hindcast Run
+
+The program takes six arguments for a hindcast run:
+1) input_path: Path to input.config file for forecast
+2) valid_yaml: Path to the config yaml file for a validation run (from nwm-cal-mgr)
+3) fcst_run_name: Name of the folder to be created for storing inputs/outputs from running ngen
+4) cycle_interval: Cycle interval (in hours) between consecutive hindcast runs
+5) num_intervals: Number of hindcast intervals to run
+6) --use_cold_start: Optional boolean flag to enable a cold start run
+
+Nwm-fcst-mgr in hindcast mode can be run from the CLI or from Python code directly. The hindcast manager will automatically handle calls to the Model Setup Workflow Manager to setup cold start, intermediate AnA, and hindcast runs and execute those runs through calls to Ngen.
+
+### Python
+1. from nwm_fcst_mgr.forecast import hindcast_workflow
+2. input_path = '/home/jeff.wade/ngwpc/run_ngen/cold_start_workflow/input_forecast.config'
+3. valid_yaml = '/home/jeff.wade/ngwpc/run_ngen/kge_dds/noah_cfes/01123000/Output/Validation_Run/01123000_config_valid_best.yaml'
+4. fcst_run_name = 'hindcast_run1'
+5. cycle_interval = 3
+6. num_intervals = 6
+7.  use_cold_start = True
+
+8. hindcast_workflow(input_path=input_path, valid_yaml=valid_yaml, fcst_run_name=fcst_run_name, cycle_interval=cycle_interval, num_intervals=num_intervals, use_cold_start=True)
+
+
+### CLI
+python -m nwm_fcst_mgr.forecast hindcast_workflow input_path valid_yaml fcst_run_name cycle_interval num_intervals --use_cold_start
 
 where the arguments are replaced by the paths above.
 
