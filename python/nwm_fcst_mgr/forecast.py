@@ -503,6 +503,7 @@ def parse_args():
     hindcast_workflow_sub = subparser.add_parser("hindcast_workflow", parents=[parent_parser], help="Run forecast workflow")
     hindcast_workflow_sub.add_argument("cycle_interval", type=int, help="Cycle interval (in hours) between hindcast runs")
     hindcast_workflow_sub.add_argument("num_intervals", type=int, help="Number of hindcast cycles to perform")
+    hindcast_workflow_sub.add_argument("--use_int_ana", action="store_true", help="Enable intermediate AnA flag when passed")
 
     return parser.parse_args()
 
@@ -522,7 +523,7 @@ def main():
     if args.command == "hindcast_workflow":
         hindcast_workflow(input_path=args.input_path, valid_yaml=args.valid_yaml,
                           fcst_run_name=args.fcst_run_name, use_cold_start=args.use_cold_start,
-                          cycle_interval=args.cycle_interval, num_intervals=args.num_intervals)
+                          cycle_interval=args.cycle_interval, num_intervals=args.num_intervals, use_int_ana=args.use_int_ana)
     else:
         raise ValueError(f"Unexpected command: {args.command}. Use either 'fcst_workflow' or 'hindcast_workflow'.")
 
