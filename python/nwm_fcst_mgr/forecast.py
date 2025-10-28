@@ -24,6 +24,7 @@ from mswm.manager import build_fcst
 
 # setup the logger
 logger = logging.getLogger(__name__)
+log_level_set()
 
 
 class RunStatus(Enum):
@@ -448,7 +449,6 @@ def hindcast_workflow(input_path, valid_yaml, fcst_run_name, use_cold_start=Fals
 
         # Run cold start
         run_fcst(valid_yaml, cold_start_real_path)
-        logger.info("Cold start ngen run completed")
 
     # Generate hindcast interval times in hours
     hind_interval = list(range(0, num_iterations * cycle_interval, cycle_interval))
@@ -480,7 +480,6 @@ def hindcast_workflow(input_path, valid_yaml, fcst_run_name, use_cold_start=Fals
 
         # Run hindcasting period
         run_fcst(valid_yaml, hind_real_path)
-        logger.info(f"Hindcast run {hind_cycle} ngen run completed")
 
 
 def parse_args():
@@ -502,16 +501,13 @@ def parse_args():
     # Subcommand: hindcast_workflow
     hindcast_workflow_sub = subparser.add_parser("hindcast_workflow", parents=[parent_parser], help="Run forecast workflow")
     hindcast_workflow_sub.add_argument("cycle_interval", type=int, help="Cycle interval (in hours) between hindcast runs")
-    hindcast_workflow_sub.add_argument("num_intervals", type=int, help="Number of hindcast cycles to perform")
+    hindcast_workflow_sub.add_argument("num_iterations", type=int, help="Number of hindcast cycles to perform")
     hindcast_workflow_sub.add_argument("--use_int_ana", action="store_true", help="Enable intermediate AnA flag when passed")
 
     return parser.parse_args()
 
 
 def main():
-
-    # Initialize logging explicitly for CLI entrypoint
-    log_level_set()
 
     # Retrieve CLI args
     args = parse_args()
@@ -523,11 +519,11 @@ def main():
     if args.command == "hindcast_workflow":
         hindcast_workflow(input_path=args.input_path, valid_yaml=args.valid_yaml,
                           fcst_run_name=args.fcst_run_name, use_cold_start=args.use_cold_start,
-                          cycle_interval=args.cycle_interval, num_intervals=args.num_intervals, use_int_ana=args.use_int_ana)
+                          cycle_interval=args.cycle_interval, num_iterations=args.num_iterations, use_int_ana=args.use_int_ana)
     else:
         raise ValueError(f"Unexpected command: {args.command}. Use either 'fcst_workflow' or 'hindcast_workflow'.")
 
 
 if __name__ == "__main__":
-    print_git_info_all()
+    # print_git_info_all()
     main()
