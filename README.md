@@ -71,6 +71,7 @@ The program takes six arguments for a hindcast run:
 4) cycle_interval: Cycle interval (in hours) between consecutive hindcast runs
 5) num_intervals: Number of hindcast intervals to run
 6) --use_cold_start: Optional boolean flag to enable a cold start run
+7) --use_int_ana: Optional boolean flag to enable an intermediate ana run
 
 Nwm-fcst-mgr in hindcast mode can be run from the CLI or from Python code directly. The hindcast manager will automatically handle calls to the Model Setup Workflow Manager to setup cold start, intermediate AnA, and hindcast runs and execute those runs through calls to Ngen.
 
@@ -81,9 +82,10 @@ Nwm-fcst-mgr in hindcast mode can be run from the CLI or from Python code direct
 4. fcst_run_name = 'hindcast_run1'
 5. cycle_interval = 3
 6. num_intervals = 6
-7.  use_cold_start = True
+7. use_cold_start = True
+8. use_int_ana = True
 
-8. hindcast_workflow(input_path=input_path, valid_yaml=valid_yaml, fcst_run_name=fcst_run_name, cycle_interval=cycle_interval, num_intervals=num_intervals, use_cold_start=True)
+8. hindcast_workflow(input_path=input_path, valid_yaml=valid_yaml, fcst_run_name=fcst_run_name, cycle_interval=cycle_interval, num_intervals=num_intervals, use_cold_start=True, use_int_ana=True)
 
 
 ### CLI
