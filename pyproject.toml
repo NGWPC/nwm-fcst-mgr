@@ -7,11 +7,12 @@ name = "nwm_fcst_mgr"
 version = "0.1.1"           # or mark as dynamic if you use setuptools-scm
 requires-python = ">=3.10"
 dependencies = [
-  "geopandas~=1.1.1",
-  "pandas~=2.3.1",
+  "geopandas~=1.1.1",             # Match ngen-forcing
+  "pandas~=2.3.3",                # Match ngen-forcing
   "netCDF4==1.6.3",
   "matplotlib~=3.10.6",
   "PyYAML~=6.0.2",
+  "shapely~=2.1.2",               # Match ngen-forcing
 ]
 
 [tool.setuptools]
