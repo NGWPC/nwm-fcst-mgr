@@ -93,9 +93,9 @@ def run_fcst(valid_yaml: str, real_path: str):
 
     # read troute output file
     outfile = glob.glob(f'{run_output_dir}/troute*.nc')[0]
+    logger.info(f'Reading T-route output file: {outfile}')
     output = read_troute_output(gage0, valid_config['model']['crosswalk'], gpkg_cats, outfile)
 
-    logger.info(f'Reading T-route output file: {outfile}')
 
     # plot the hydrograph
     plot_path = Path(run_output_dir, gage0 + '_hydrograph.png')
