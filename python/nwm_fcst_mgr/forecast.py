@@ -80,6 +80,7 @@ class ForecastExecutionManager:
     def _close_log(self):
         if self.log_handle is not None:
             if not self.log_handle.closed:
+                logger.debug(f"Closing log: {self.log_handle.name}")
                 self.log_handle.flush()
                 os.fsync(self.log_handle.fileno())
                 self.log_handle.close()
@@ -87,9 +88,18 @@ class ForecastExecutionManager:
     def _stop_ngen(self) -> None:
         """Send a SIGTERM signal to the ngen process and raise NgenIntentionallyStoppedError.
         If the process does not stop within a window of time, send a SIGKILL and raise a TimeoutError."""
-        if self.status == RunStatus.EXECUTION_STOPPED:
-            logger.info("ngen already stopped")
+        if self.status in (
+            RunStatus.EXECUTION_STOPPED,
+            RunStatus.EXECUTION_SUCCESS,
+            RunStatus.EXECUTION_FAILED,
+            RunStatus.POSTPROCESSED,
+        ):
+            self.proc.poll()
+            if self.proc.returncode is None:
+                raise RuntimeError(f"Expected process to have already stopped since status = {self.status}, but it has not")
+            logger.debug(f"ngen has already stopped")
             return
+        
         if self.proc is None:
             raise RuntimeError(f"self.proc not initialized")
 
@@ -144,7 +154,7 @@ class ForecastExecutionManager:
             self._stop_ngen()
         self._check_process_returncode()
 
-    def preprocess(self):
+    def preprocess(self) -> None:
         """Preprocess an ngen run, validate some inputs, and set the execution status."""
 
         # set environment variable for ngencerf backend
@@ -182,7 +192,7 @@ class ForecastExecutionManager:
 
         self.status = RunStatus.PREPROCESSED
 
-    def execute(self, wait: bool = True):
+    def execute(self, wait: bool = True) -> None:
         """Execute ngen run for either cold-start or forecast period.
         To interrupt execution: call self.schedule_ngen_stoppage()"""
         if self.status != RunStatus.PREPROCESSED:
@@ -204,21 +214,21 @@ class ForecastExecutionManager:
 
         if wait:
             poll_freq_seconds = 2
-            logger.info(f"Polling ngen process every {poll_freq_seconds} seconds...")
+            logger.debug(f"Polling ngen process every {poll_freq_seconds} seconds...")
             start = time.perf_counter()
             while True:
                 self.poll_ngen_flush_log()
                 if self.status == RunStatus.EXECUTION_SUCCESS:
                     break
-                logger.info(f"ngen has been running for {(time.perf_counter() - start):.1f} seconds...")
+                logger.debug(f"ngen has been running for {(time.perf_counter() - start):.1f} seconds...")
                 time.sleep(poll_freq_seconds)
-            logger.info(f"ngen finished running after {(time.perf_counter() - start):.1f} seconds")
+            logger.info(f"ngen finished after {(time.perf_counter() - start):.1f} seconds")
             self._close_log()
 
         else:
             logger.info(f"Returning while ngen is running at: {self.proc}")
 
-    def postprocess(self):
+    def postprocess(self) -> None:
         """Postprocess results after ngen finishes running."""
         # TODO could assert that certain csv and nc files exist and are non-empty
 
