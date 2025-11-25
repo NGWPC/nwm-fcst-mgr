@@ -108,7 +108,7 @@ class ForecastExecutionManager:
                 raise TimeoutError(msg)
 
             self.proc.poll()
-            if self.proc.returncode is None:  # Still running
+            if self.proc.returncode is not None:  # Process has exited
                 break
             time.sleep(0.5)
 
