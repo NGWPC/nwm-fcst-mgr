@@ -88,12 +88,12 @@ class ForecastExecutionManager:
         """Send a SIGTERM signal to the ngen process and raise NgenIntentionallyStoppedError.
         If the process does not stop within a window of time, send a SIGKILL and raise a TimeoutError."""
         if self.status == RunStatus.EXECUTION_STOPPED:
-            print("ngen already stopped")
+            logger.info("ngen already stopped")
             return
         if self.proc is None:
             raise RuntimeError(f"self.proc not initialized")
 
-        print("Intentionally stopping ngen...")
+        logger.info("Intentionally stopping ngen...")
         stop_timeout_sec = 5
         signal_to_send = signal.SIGTERM
         deadline = time.perf_counter() + stop_timeout_sec
