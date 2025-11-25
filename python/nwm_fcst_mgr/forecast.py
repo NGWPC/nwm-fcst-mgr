@@ -43,7 +43,7 @@ class ForecastExecutionManager:
     """
 
     def __init__(self, valid_yaml: str, real_path: str):
-        self.status = RunStatus.NOSTATUS
+        self._status = RunStatus.NOSTATUS
 
         self.valid_yaml = valid_yaml
         self.real_path = real_path
@@ -65,7 +65,7 @@ class ForecastExecutionManager:
         # Set during postprocess()
         self.output_csv = None
 
-        # If set to True, then the ngen proc will be sent a SIGABRT
+        # If set to True, then the ngen proc will be sent a SIGTERM
         self._stop_ngen_flag = False
 
     def __enter__(self):
@@ -86,9 +86,16 @@ class ForecastExecutionManager:
                 self.log_handle.close()
 
     def _stop_ngen(self) -> None:
-        """Send a SIGTERM signal to the ngen process and raise NgenIntentionallyStoppedError.
-        If the process does not stop within a window of time, send a SIGKILL and raise a TimeoutError."""
-        if self.status in (
+        """
+        If ngen is not running:
+            return
+        If ngen is running:
+            Send a SIGTERM signal to the ngen process.
+                If the process does not stop within a window of time, send a SIGKILL and raise a TimeoutError.
+            Set self._status.
+            Raise NgenIntentionallyStoppedError.
+        """
+        if self._status in (
             RunStatus.EXECUTION_STOPPED,
             RunStatus.EXECUTION_SUCCESS,
             RunStatus.EXECUTION_FAILED,
@@ -96,7 +103,7 @@ class ForecastExecutionManager:
         ):
             self.proc.poll()
             if self.proc.returncode is None:
-                raise RuntimeError(f"Expected process to have already stopped since status = {self.status}, but it has not")
+                raise RuntimeError(f"Expected process to have already stopped since status = {self._status}, but it has not")
             logger.debug(f"ngen has already stopped")
             return
         
@@ -122,22 +129,22 @@ class ForecastExecutionManager:
                 break
             time.sleep(0.5)
 
-        self.status = RunStatus.EXECUTION_STOPPED
+        self._status = RunStatus.EXECUTION_STOPPED
         raise NgenIntentionallyStoppedError(self.proc.returncode, self.cmd, self.cwd)
 
     def _check_process_returncode(self) -> None:
         """Poll the ngen process, set status if it has exited, and raise NgenCalledProcessError if it had a non-zero exit code."""
-        if self.status != RunStatus.EXECUTION_RUNNING:
-            raise RuntimeError(f"Expected self.status == {RunStatus.EXECUTION_RUNNING}, got {self.status}")
+        if self._status != RunStatus.EXECUTION_RUNNING:
+            raise RuntimeError(f"Expected self._status == {RunStatus.EXECUTION_RUNNING}, got {self._status}")
         self.proc.poll()
         match self.proc.returncode:
             case None:  # Still running
                 pass
             case 0:
-                self.status = RunStatus.EXECUTION_SUCCESS
+                self._status = RunStatus.EXECUTION_SUCCESS
                 logger.info("NGEN run completed successfully")
             case _:
-                self.status = RunStatus.EXECUTION_FAILED
+                self._status = RunStatus.EXECUTION_FAILED
                 logger.critical(
                     f"Ngen run failed with return code {self.proc.returncode}. Command: {self.cmd}. Cwd: {self.cwd}"
                 )
@@ -190,13 +197,13 @@ class ForecastExecutionManager:
                 logger.critical(e)
                 raise
 
-        self.status = RunStatus.PREPROCESSED
+        self._status = RunStatus.PREPROCESSED
 
     def execute(self, wait: bool = True) -> None:
         """Execute ngen run for either cold-start or forecast period.
         To interrupt execution: call self.schedule_ngen_stoppage()"""
-        if self.status != RunStatus.PREPROCESSED:
-            raise RuntimeError(f"Invalid self.status: {self.status} (expected {RunStatus.PREPROCESSED})")
+        if self._status != RunStatus.PREPROCESSED:
+            raise RuntimeError(f"Invalid self._status: {self._status} (expected {RunStatus.PREPROCESSED})")
 
         logger.info(f"Initializing NGEN run from:  {self.real_path}")
 
@@ -210,7 +217,7 @@ class ForecastExecutionManager:
         self.cwd = str(self.out_dir)
         logger.info(f"Starting ngen via cmd: {self.cmd} from cwd: {self.cwd}")
         self.proc = subprocess.Popen(self.cmd, stdout=self.log_handle, stderr=self.log_handle, shell=True, cwd=self.cwd)
-        self.status = RunStatus.EXECUTION_RUNNING
+        self._status = RunStatus.EXECUTION_RUNNING
 
         if wait:
             poll_freq_seconds = 2
@@ -218,7 +225,7 @@ class ForecastExecutionManager:
             start = time.perf_counter()
             while True:
                 self.poll_ngen_flush_log()
-                if self.status == RunStatus.EXECUTION_SUCCESS:
+                if self._status == RunStatus.EXECUTION_SUCCESS:
                     break
                 logger.debug(f"ngen has been running for {(time.perf_counter() - start):.1f} seconds...")
                 time.sleep(poll_freq_seconds)
@@ -232,8 +239,8 @@ class ForecastExecutionManager:
         """Postprocess results after ngen finishes running."""
         # TODO could assert that certain csv and nc files exist and are non-empty
 
-        if self.status != RunStatus.EXECUTION_SUCCESS:
-            raise RuntimeError(f"Invalid self.status: {self.status} (expected {RunStatus.EXECUTION_SUCCESS})")
+        if self._status != RunStatus.EXECUTION_SUCCESS:
+            raise RuntimeError(f"Invalid self._status: {self._status} (expected {RunStatus.EXECUTION_SUCCESS})")
 
         # move output files to output directory
         run_output_dir = self.out_dir / "output/"
@@ -264,7 +271,7 @@ class ForecastExecutionManager:
 
         logger.info(f"Fcst-mgr NGEN run outputs saved at: {run_output_dir}")
 
-        self.status = RunStatus.POSTPROCESSED
+        self._status = RunStatus.POSTPROCESSED
 
 
 def run_fcst(valid_yaml: str, real_path: str):
