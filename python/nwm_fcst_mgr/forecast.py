@@ -71,7 +71,25 @@ class ForecastExecutionManager:
     def __enter__(self):
         return self
 
-    def __exit__(self, exc_type, exc_val, exc_tb):
+    def __exit__(self, exc_type, exc_val, exc_tb) -> bool:
+        """
+        Called when the context manager leaves its `with` block.
+
+        KeyboardInterrupt is handled specially to avoid the situation of it being
+        replaced by NgenIntentionallyStoppedError during the call to self._stop_ngen().
+        This special handling causes the user to receive the original KeyboardInterrupt
+        exception, which allows idiomatic interruption of the main thread in test cases
+        that are designed to catch and ignore instances of NgenIntentionallyStoppedError.
+        """
+        try:
+            self.close()
+        except NgenIntentionallyStoppedError as e:
+            if exc_type is KeyboardInterrupt:
+                return False
+            else:
+                raise e
+
+    def close(self):
         try:
             self._stop_ngen()
         finally:
