@@ -217,19 +217,23 @@ class ForecastExecutionManager:
 
         self._status = RunStatus.PREPROCESSED
 
-    def execute(self, wait: bool = True) -> None:
+    def execute(self, wait: bool = True, log_file_open_mode: str = "a+") -> None:
         """Execute ngen run for either cold-start or forecast period.
-        To interrupt execution: call self.schedule_ngen_stoppage()"""
+        To interrupt execution: call self.schedule_ngen_stoppage().
+        To start a new output log file for the subprocess' stdout+stderr: use "w" instead of default "a+" for log_file_open_mode.
+        """
         if self._status != RunStatus.PREPROCESSED:
             raise RuntimeError(f"Invalid self._status: {self._status} (expected {RunStatus.PREPROCESSED})")
+        if log_file_open_mode not in ("a+", "w"):
+            raise ValueError(f'Expected "a+" or "w" for log_file_open_mode, but got: {log_file_open_mode}')
 
         logger.info(f"Initializing NGEN run from:  {self.real_path}")
 
         # kick off ngen run and save stdout & stderr to ngen_stdout_stderr.log
         log_file = self.out_dir / "ngen_stdout_stderr.log"
 
-        logger.info(f"Opening log file in append mode: {log_file}")
-        self.log_handle = open(log_file, "a+")
+        logger.info(f"Opening log file using mode {repr(log_file_open_mode)}: {log_file}")
+        self.log_handle = open(log_file, log_file_open_mode)
 
         self.cmd = f'{self.ngen_exe} {self.gpkg_cats} "all" {self.gpkg_nexus} "all" {self.real_path}'
         self.cwd = str(self.out_dir)
