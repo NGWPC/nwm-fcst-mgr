@@ -49,7 +49,7 @@ class ForecastExecutionManager:
         self.valid_yaml = valid_yaml
         self.real_path = real_path
 
-        # Set during preprocess()
+        # Set from config_cache or preprocess)
         self.valid_config = None
         self.out_dir = None
         self.gpkg_cats = None
@@ -183,38 +183,23 @@ class ForecastExecutionManager:
     def preprocess(self) -> None:
         """Preprocess an ngen run, validate some inputs, and set the execution status."""
 
+        # Load and extract config if not already processed
+        if self.valid_config is None:
+            self.valid_config = load_yaml(self.valid_yaml)
+            logger.info(f"Validation file loaded from: {self.valid_yaml}")
+
+            # Extract and validate config values
+            self.gpkg_cats, self.gpkg_nexus, self.ngen_exe, self.gage0 = extract_config(
+                self.valid_config, self.valid_yaml
+            )
+
         # set environment variable for ngencerf backend
         os.environ["NGEN_RESULTS_DIR"] = str(Path(self.real_path).parent)
         logging.info(f"Set environment variable NGEN_RESULTS_DIR to: {os.environ['NGEN_RESULTS_DIR']}")
 
-        # Read validation yaml file
-        self.valid_config = load_yaml(self.valid_yaml)
-
-        logger.info(f"Validation file loaded from: {self.valid_yaml}")
-
         # Retrieve output_dir
         real_file = Path(self.real_path)
         self.out_dir = real_file.parent
-
-        # Retrieve hydrofabric gpkg
-        self.gpkg_cats = self.valid_config["model"]["catchments"]
-        self.gpkg_nexus = self.valid_config["model"]["nexus"]
-
-        # Retrieve ngen executable
-        self.ngen_exe = self.valid_config["model"]["binary"]
-
-        # get gage ID and make sure it is not empty
-        try:
-            self.gage0 = self.valid_config["model"]["eval_params"]["basinID"]
-        except ValueError as e:
-            logger.critical(f"Key model/eval_params/basinID not found in {self.valid_yaml}\n{e}")
-            raise
-        if self.gage0 == "":
-            try:
-                raise ValueError(f"basinID in {self.valid_yaml} cannot be empty")
-            except ValueError as e:
-                logger.critical(e)
-                raise
 
         self._status = RunStatus.PREPROCESSED
 
@@ -339,6 +324,31 @@ def load_yaml(file_path: str) -> dict:
     return yaml_dict
 
 
+def extract_config(valid_config: dict, valid_yaml: str) -> tuple:
+    """ Extract and validate static config values from loaded config file"""
+    # Retrieve hydrofabric gpkg
+    gpkg_cats = valid_config["model"]["catchments"]
+    gpkg_nexus = valid_config["model"]["nexus"]
+
+    # Retrieve ngen executable
+    ngen_exe = valid_config["model"]["binary"]
+
+    # get gage ID and make sure it is not empty
+    try:
+        gage0 = valid_config["model"]["eval_params"]["basinID"]
+    except ValueError as e:
+        logger.critical(f"Key model/eval_params/basinID not found in {valid_yaml}\n{e}")
+        raise
+    if gage0 == "":
+        try:
+            raise ValueError(f"basinID in {valid_yaml} cannot be empty")
+        except ValueError as e:
+            logger.critical(e)
+            raise
+
+    return gpkg_cats, gpkg_nexus, ngen_exe, gage0
+
+
 def read_troute_output(
         gage0: str,
         cwt_file: Path,
@@ -429,8 +439,7 @@ def fcst_workflow(input_path, valid_yaml, fcst_run_name, use_cold_start=False):
     logger.info("Forecast ngen run completed")
 
 
-def hindcast_workflow(input_path, valid_yaml, fcst_run_name, use_cold_start=False, use_int_ana=False,
-                      cycle_interval=None, num_iterations=None):
+def hindcast_workflow(input_path, valid_yaml, fcst_run_name, cycle_interval, num_iterations, use_cold_start=False, use_int_ana=False):
     """"
     Run hindcast workflow with optional cold start and intermediate ana runs
     Accepts cycle interval and number of intervals for repeated hindcasts
@@ -493,11 +502,8 @@ def parse_args():
     parent_parser.add_argument("fcst_run_name", help="Name of the folder to be created for storing inputs/outputs from running ngen")
     parent_parser.add_argument("--use_cold_start", action="store_true", help="Enable cold start flag when passed")
 
-    # subcommand: fcst_workflow
-    fcst_workflow_sub = subparser.add_parser("fcst_workflow", parents=[parent_parser], help="Run forecast workflow")
-
     # Subcommand: hindcast_workflow
-    hindcast_workflow_sub = subparser.add_parser("hindcast_workflow", parents=[parent_parser], help="Run forecast workflow")
+    hindcast_workflow_sub = subparser.add_parser("hindcast_workflow", parents=[parent_parser], help="Run hindcast workflow")
     hindcast_workflow_sub.add_argument("cycle_interval", type=int, help="Cycle interval (in hours) between hindcast runs")
     hindcast_workflow_sub.add_argument("num_iterations", type=int, help="Number of hindcast cycles to perform")
     hindcast_workflow_sub.add_argument("--use_int_ana", action="store_true", help="Enable intermediate AnA flag when passed")
