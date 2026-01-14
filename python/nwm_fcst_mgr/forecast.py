@@ -26,6 +26,21 @@ logger = logging.getLogger(__name__)
 log_level_set()
 
 
+class ConfigCache:
+    """
+    Cache for validation config and extracted values that are shared across multiple forecast runs
+    """
+    def __init__(self, valid_yaml: str):
+        self.valid_yaml = valid_yaml
+        self.valid_config = load_yaml(valid_yaml)
+        logger.info(f"Validation file loaded from: {valid_yaml}")
+
+        # Extract and validate config values once
+        self.gpkg_cats, self.gpkg_nexus, self.ngen_exe, self.gage0 = extract_config(
+            self.valid_config, self.valid_yaml
+        )
+
+
 class RunStatus(Enum):
     NOSTATUS = auto()
     PREPROCESSED = auto()  # Ready to run ngen
@@ -43,14 +58,15 @@ class ForecastExecutionManager:
     To halt execution, either exit the context manager, or call schedule_ngen_stoppage().
     """
 
-    def __init__(self, valid_yaml: str, real_path: str, valid_config: dict = None):
+    def __init__(self, valid_yaml: str, real_path: str, config_cache: ConfigCache = None):
         self._status = RunStatus.NOSTATUS
 
         self.valid_yaml = valid_yaml
         self.real_path = real_path
-        self.valid_config = valid_config
+        self.config_cache = config_cache
 
         # Set from config_cache or preprocess)
+        self.valid_config = None
         self.out_dir = None
         self.gpkg_cats = None
         self.gpkg_nexus = None
@@ -183,15 +199,12 @@ class ForecastExecutionManager:
     def preprocess(self) -> None:
         """Preprocess an ngen run, validate some inputs, and set the execution status."""
 
-        # Load and extract config if not already processed
-        if self.valid_config is None:
-            self.valid_config = load_yaml(self.valid_yaml)
-            logger.info(f"Validation file loaded from: {self.valid_yaml}")
-
-            # Extract and validate config values
-            self.gpkg_cats, self.gpkg_nexus, self.ngen_exe, self.gage0 = extract_config(
-                self.valid_config, self.valid_yaml
-            )
+        # Use cached config values
+        self.valid_config = self.config_cache.valid_config
+        self.gpkg_cats = self.config_cache.gpkg_cats
+        self.gpkg_nexus = self.config_cache.gpkg_nexus
+        self.ngen_exe = self.config_cache.ngen_exe
+        self.gage0 = self.config_cache.gage0
 
         # set environment variable for ngencerf backend
         set_os_env_key(
@@ -283,13 +296,14 @@ class ForecastExecutionManager:
         self._status = RunStatus.POSTPROCESSED
 
 
-def run_fcst(valid_yaml: str, real_path: str, valid_config: dict = None):
+def run_fcst(valid_yaml: str, real_path: str, config_cache: ConfigCache):
     """
     Execute ngen run for forecast period and cold start period (if provided)
     valid_yaml: path to validation yaml file from past calibration run
     real_path: path to realization file for a cold start or forecast period
+    config_cache: ConfigCache containing pre-loaded config and extracted values
     """
-    with ForecastExecutionManager(valid_yaml, real_path, valid_config) as fem:
+    with ForecastExecutionManager(valid_yaml, real_path, config_cache) as fem:
         fem.preprocess()
         fem.execute(wait=True)
         fem.postprocess()
@@ -420,8 +434,8 @@ def fcst_workflow(input_path, valid_yaml, fcst_run_name, use_cold_start=False):
     """
     logger.info(f'Initializing forecast run from: {valid_yaml}')
 
-    # Load config once per workflow
-    valid_config = load_yaml(valid_yaml)
+    # Load config and extract once per workflow
+    config_cache = ConfigCache(valid_yaml)
 
     # Generate msw-mgr inputs for cold start run
     if use_cold_start:
@@ -430,7 +444,7 @@ def fcst_workflow(input_path, valid_yaml, fcst_run_name, use_cold_start=False):
         logger.info(f"Cold start realization file written to: {cold_start_real_path}")
 
         # Run cold start
-        run_fcst(valid_yaml, cold_start_real_path, valid_config)
+        run_fcst(valid_yaml, cold_start_real_path, config_cache)
         logger.info("Cold start ngen run completed")
 
     # Generate msw-mgr inputs for forecast run
@@ -439,7 +453,7 @@ def fcst_workflow(input_path, valid_yaml, fcst_run_name, use_cold_start=False):
     logger.info(f"Forecast realization file written to: {fcst_real_path}")
 
     # Run forecast
-    run_fcst(valid_yaml, fcst_real_path, valid_config)
+    run_fcst(valid_yaml, fcst_real_path, config_cache)
     logger.info("Forecast ngen run completed")
 
 
@@ -450,8 +464,8 @@ def hindcast_workflow(input_path, valid_yaml, fcst_run_name, cycle_interval, num
     """
     logger.info(f'Initializing hindcast runs from: {valid_yaml}')
 
-    # Load config once per workflow
-    valid_config = load_yaml(valid_yaml)
+    # Load config and extract once per workflow
+    config_cache = ConfigCache(valid_yaml)
 
     # Generate msw-mgr inputs for cold start run
     if use_cold_start:
@@ -462,7 +476,7 @@ def hindcast_workflow(input_path, valid_yaml, fcst_run_name, cycle_interval, num
         logger.info(f"Cold start realization file written to: {cold_start_real_path}")
 
         # Run cold start
-        run_fcst(valid_yaml, cold_start_real_path, valid_config)
+        run_fcst(valid_yaml, cold_start_real_path, config_cache)
 
     # Generate hindcast interval times in hours
     hind_interval = list(range(0, num_iterations * cycle_interval, cycle_interval))
@@ -473,13 +487,13 @@ def hindcast_workflow(input_path, valid_yaml, fcst_run_name, cycle_interval, num
         logger.info(f"Intermediate AnA run realization file written to: {int_ana_real_path}")
 
         # Run intermediate ana to generate hindcasting model states
-        run_fcst(valid_yaml, int_ana_real_path, valid_config)
+        run_fcst(valid_yaml, int_ana_real_path, config_cache)
         logger.info("Intermediate AnA ngen run completed")
 
     # Loop through hindcast intervals
     for hind_cycle in hind_interval:
 
-        logger.info(f"Initializing hindcast run at interval: +{hind_cycle} hours")
+        logger.info(f"Initializing hindcast run at interval: + {hind_cycle} hours")
 
         # Format run name for hindcast cycle
         hind_run_name = fcst_run_name + '_' + str(hind_cycle)
@@ -490,7 +504,7 @@ def hindcast_workflow(input_path, valid_yaml, fcst_run_name, cycle_interval, num
         logger.info(f"Hindcast run {hind_cycle} realization file written to: {hind_real_path}")
 
         # Run hindcasting period
-        run_fcst(valid_yaml, hind_real_path, valid_config)
+        run_fcst(valid_yaml, hind_real_path, config_cache)
 
 
 def parse_args():
