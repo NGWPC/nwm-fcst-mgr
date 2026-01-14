@@ -17,7 +17,6 @@ import yaml
 import argparse
 
 from nwm_fcst_mgr.log_level import log_level_set
-from nwm_fcst_mgr.git_util import print_git_info_all
 from nwm_fcst_mgr.exceptions import NgenCalledProcessError, NgenIntentionallyStoppedError
 from mswm.manager import build_fcst
 
@@ -43,14 +42,14 @@ class ForecastExecutionManager:
     To halt execution, either exit the context manager, or call schedule_ngen_stoppage().
     """
 
-    def __init__(self, valid_yaml: str, real_path: str):
+    def __init__(self, valid_yaml: str, real_path: str, valid_config: dict = None):
         self._status = RunStatus.NOSTATUS
 
         self.valid_yaml = valid_yaml
         self.real_path = real_path
+        self.valid_config = valid_config
 
         # Set from config_cache or preprocess)
-        self.valid_config = None
         self.out_dir = None
         self.gpkg_cats = None
         self.gpkg_nexus = None
@@ -282,13 +281,13 @@ class ForecastExecutionManager:
         self._status = RunStatus.POSTPROCESSED
 
 
-def run_fcst(valid_yaml: str, real_path: str):
+def run_fcst(valid_yaml: str, real_path: str, valid_config: dict = None):
     """
     Execute ngen run for forecast period and cold start period (if provided)
     valid_yaml: path to validation yaml file from past calibration run
     real_path: path to realization file for a cold start or forecast period
     """
-    with ForecastExecutionManager(valid_yaml, real_path) as fem:
+    with ForecastExecutionManager(valid_yaml, real_path, valid_config) as fem:
         fem.preprocess()
         fem.execute(wait=True)
         fem.postprocess()
@@ -440,7 +439,7 @@ def fcst_workflow(input_path, valid_yaml, fcst_run_name, use_cold_start=False):
 
 
 def hindcast_workflow(input_path, valid_yaml, fcst_run_name, cycle_interval, num_iterations, use_cold_start=False, use_int_ana=False):
-    """"
+    """
     Run hindcast workflow with optional cold start and intermediate ana runs
     Accepts cycle interval and number of intervals for repeated hindcasts
     """
@@ -468,9 +467,6 @@ def hindcast_workflow(input_path, valid_yaml, fcst_run_name, cycle_interval, num
         # Run intermediate ana to generate hindcasting model states
         run_fcst(valid_yaml, int_ana_real_path)
         logger.info("Intermediate AnA ngen run completed")
-
-    # Generate hindcast interval times in hours
-    hind_interval = list(range(0, num_iterations, cycle_interval))
 
     # Loop through hindcast intervals
     for hind_cycle in hind_interval:
@@ -523,7 +519,7 @@ def main():
     if args.command == "fcst_workflow":
         fcst_workflow(input_path=args.input_path, valid_yaml=args.valid_yaml,
                       fcst_run_name=args.fcst_run_name, use_cold_start=args.use_cold_start)
-    if args.command == "hindcast_workflow":
+    elif args.command == "hindcast_workflow":
         hindcast_workflow(input_path=args.input_path, valid_yaml=args.valid_yaml,
                           fcst_run_name=args.fcst_run_name, use_cold_start=args.use_cold_start,
                           cycle_interval=args.cycle_interval, num_iterations=args.num_iterations, use_int_ana=args.use_int_ana)
