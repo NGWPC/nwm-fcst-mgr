@@ -504,6 +504,9 @@ def parse_args():
     parent_parser.add_argument("fcst_run_name", help="Name of the folder to be created for storing inputs/outputs from running ngen")
     parent_parser.add_argument("--use_cold_start", action="store_true", help="Enable cold start flag when passed")
 
+    # Subcommand: forecast_workflow
+    subparser.add_parser("fcst_workflow", parents=[parent_parser], help="Run forecast workflow")
+
     # Subcommand: hindcast_workflow
     hindcast_workflow_sub = subparser.add_parser("hindcast_workflow", parents=[parent_parser], help="Run hindcast workflow")
     hindcast_workflow_sub.add_argument("cycle_interval", type=int, help="Cycle interval (in hours) between hindcast runs")
