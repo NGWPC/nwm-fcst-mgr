@@ -57,7 +57,7 @@ class ForecastExecutionManager:
     To halt execution, either exit the context manager, or call schedule_ngen_stoppage().
     """
 
-    def __init__(self, valid_yaml: str, real_path: str, config_cache: ConfigCache = None):
+    def __init__(self, valid_yaml: str, real_path: str, config_cache: ConfigCache):
         self._status = RunStatus.NOSTATUS
 
         self.valid_yaml = valid_yaml
