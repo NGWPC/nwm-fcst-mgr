@@ -7,7 +7,9 @@ A program to execute forecast and hindcast runs runs provided a configuration fi
 
 ### Clone nwm-fcst-mgr
 
+```bash
 git clone -b development --recurse-submodules https://github.com/NGWPC/nwm-fcst-mgr.git
+```
 
 ### Build the environment
 
@@ -17,81 +19,103 @@ If you already have an environment for running ngen, you can use the same venv a
 
 Otherwise, follow the following steps to build a new environment (in AWS Ubuntu 22.04 LTS Workspace):
 
-1) cd [VENV_ROOT]
-2) /usr/bin/python3.11 -m venv venv.ngen
-3) source venv.ngen/bin/activate
-4) pip install --upgrade pip
-5) pip3 install numpy==1.26.4 pandas bmipy netcdf4==1.6.3 joblib toolz Cython geopandas pyarrow matplotlib deprecated 
-6) cd [NGEN_ROOT]/ngen/extern/t-route/
-7) pip install -r requirements.txt
-8) ./compiler.sh 
+1) `cd [VENV_ROOT]`
+2) `/usr/bin/python3.11 -m venv venv.ngen`
+3) `source venv.ngen/bin/activate`
+4) `pip install --upgrade pip`
+5) `pip3 install numpy==1.26.4 pandas bmipy netcdf4==1.6.3 joblib toolz Cython geopandas pyarrow matplotlib deprecated` 
+6) `cd [NGEN_ROOT]/ngen/extern/t-route/`
+7) `pip install -r requirements.txt`
+8) `./compiler.sh`
 
-where [VENV_ROOT] and [NGEN_ROOT] refer to the directory to install the python virtual environment and the root directory where ngen is installed, respectively.
+where `[VENV_ROOT]` and `[NGEN_ROOT]` refer to the directory to install the python virtual environment and the root directory where ngen is installed, respectively.
 
-## Usage
+## Setup
 
 Follow the following steps to test the program:
 
-1. source [VENV_ROOT]/env.ngen/bin/activate
-2. cd [NWM-FCST-MGR_ROOT]/nwm-fcst-mgr
-3. pip install .
+1. `source [VENV_ROOT]/env.ngen/bin/activate`
+2. `cd [NWM-FCST-MGR_ROOT]/nwm-fcst-mgr`
+3. `pip install .`
 
-where [NWM-FCST-MGR_ROOT] is where nwm-fcst-mgr is installed.
+where `[NWM-FCST-MGR_ROOT]` is where nwm-fcst-mgr is installed.
 
-#### Forecast Run
+## Usage
+nwm-fcst-mgr supports two workflows: **forecast** and **hindcast** runs.
 
-The program takes four arguments for a forecast run:
-1) input_path: Path to input.config file for forecast
-2) valid_yaml: Path to the config yaml file for a validation run (from nwm-cal-mgr)
-3) fcst_run_name: Name of the folder to be created for storing inputs/outputs from running ngen
-4) --use_cold_start: Optional boolean flag to enable a cold start run
+### Forecast Workflow
 
-Nwm-fcst-mgr in forecast mode can be run from the CLI or from Python code directly. The forecast manager will automatically handle calls to the Model Setup Workflow Manager to setup cold start and forecast runs and execute those runs through calls to Ngen.
+Run a cold start followed by a forecast period:
 
-### Python
-1. from nwm_fcst_mgr.forecast import fcst_workflow
-2. input_path = '/home/jeff.wade/ngwpc/run_ngen/cold_start_workflow/input_forecast.config'
-3. valid_yaml = '/home/jeff.wade/ngwpc/run_ngen/kge_dds/noah_cfes/01123000/Output/Validation_Run/01123000_config_valid_best.yaml'
-4. fcst_run_name = 'fcst_run1'
-5. use_cold_start = True
-6. fcst_workflow(input_path=input_path, valid_yaml=valid_yaml, fcst_run_name=fcst_run_name, use_cold_start=True)
+#### CLI
 
+```bash
+python -m nwm_fcst_mgr forecast_workflow \
+    /path/to/input.config \
+    /path/to/valid.yaml \
+    my_forecast_run \
+    --use_cold_start
+```
 
-### CLI
-python -m nwm_fcst_mgr.forecast fcst_workflow input_path valid_yaml fcst_run_name --use_cold_start
+#### Python
 
-where the arguments are replaced by the paths above.
+```python
+from nwm_fcst_mgr.forecast import fcst_workflow
 
-#### Hindcast Run
+fcst_workflow(
+    input_path='/path/to/input.config',
+    valid_yaml='/path/to/valid.yaml',
+    fcst_run_name='my_forecast_run',
+    use_cold_start=True
+)
+```
 
-The program takes six arguments for a hindcast run:
-1) input_path: Path to input.config file for forecast
-2) valid_yaml: Path to the config yaml file for a validation run (from nwm-cal-mgr)
-3) fcst_run_name: Name of the folder to be created for storing inputs/outputs from running ngen
-4) cycle_interval: Cycle interval (in hours) between consecutive hindcast runs
-5) num_intervals: Number of hindcast intervals to run
-6) --use_cold_start: Optional boolean flag to enable a cold start run
-7) --use_int_ana: Optional boolean flag to enable an intermediate ana run
+#### Arguments
+- `input_path` - Path to forecast input configuration file (from nwm-msw-mgr)
+- `valid_yaml` - Path to validation yaml file from previous calibration run (from nwm-cal-mgr)
+- `my_forecast_run` - Name for the forecast run folder
+- `--use_cold_start` - (optional) Run cold start before forecast
 
-Nwm-fcst-mgr in hindcast mode can be run from the CLI or from Python code directly. The hindcast manager will automatically handle calls to the Model Setup Workflow Manager to setup cold start, intermediate AnA, and hindcast runs and execute those runs through calls to Ngen.
+---
 
-### Python
-1. from nwm_fcst_mgr.forecast import hindcast_workflow
-2. input_path = '/home/jeff.wade/ngwpc/run_ngen/cold_start_workflow/input_forecast.config'
-3. valid_yaml = '/home/jeff.wade/ngwpc/run_ngen/kge_dds/noah_cfes/01123000/Output/Validation_Run/01123000_config_valid_best.yaml'
-4. fcst_run_name = 'hindcast_run1'
-5. cycle_interval = 3
-6. num_intervals = 6
-7. use_cold_start = True
-8. use_int_ana = True
+### Hindcast Workflow
 
-8. hindcast_workflow(input_path=input_path, valid_yaml=valid_yaml, fcst_run_name=fcst_run_name, cycle_interval=cycle_interval, num_intervals=num_intervals, use_cold_start=True, use_int_ana=True)
+Run repeated hindcast cycles at regular intervals, with start up states provided by cold start and warm start runs.
 
+#### CLI
 
-### CLI
-python -m nwm_fcst_mgr.forecast hindcast_workflow input_path valid_yaml fcst_run_name cycle_interval num_intervals --use_cold_start
+```bash
+python -m nwm_fcst_mgr hindcast_workflow \
+    /path/to/input.config \
+    /path/to/valid.yaml \
+    my_hindcast_run \
+    3 \
+    10 \
+```
 
-where the arguments are replaced by the paths above.
+#### Python
+
+```python
+from nwm_fcst_mgr.forecast import fcst_workflow
+
+fcst_workflow(
+    input_path='/path/to/input.config',
+    valid_yaml='/path/to/valid.yaml',
+    fcst_run_name='my_forecast_run',
+    cycle_interval=3,
+    num_iterations=10
+)
+```
+
+#### Arguments
+- `input_path` - Path to forecast input configuration file (from nwm-msw-mgr)
+- `valid_yaml` - Path to validation yaml file from previous calibration run (from nwm-cal-mgr)
+- `my_hindcast_run` - Name for the hindcast run folder
+- `cycle_interval` - Cycle interval in hours (spacing between hindcast cycles)
+- `num_iterations` - Number of hindcast cycles to perform
+
+#### Hindcast Example
+With `cycle_interval=3` and `num_iterations=10`, hindcast runs will be executed at 0, 3, 6, 9, 12, 15, 18, 21, 24, 27 hours.
 
 
 ## Docker container

@@ -526,7 +526,7 @@ def parse_args():
     parent_parser.add_argument("--use_cold_start", action="store_true", help="Enable cold start flag when passed")
 
     # Subcommand: forecast_workflow
-    subparser.add_parser("fcst_workflow", parents=[parent_parser], help="Run forecast workflow")
+    subparser.add_parser("forecast_workflow", parents=[parent_parser], help="Run forecast workflow")
 
     # Subcommand: hindcast_workflow
     hindcast_workflow_sub = subparser.add_parser("hindcast_workflow", parents=[parent_parser], help="Run hindcast workflow")
@@ -542,7 +542,7 @@ def main():
     args = parse_args()
 
     # Run fcst/hindcast workflows
-    if args.command == "fcst_workflow":
+    if args.command == "forecast_workflow":
         fcst_workflow(input_path=args.input_path, valid_yaml=args.valid_yaml,
                       fcst_run_name=args.fcst_run_name, use_cold_start=args.use_cold_start)
     elif args.command == "hindcast_workflow":
@@ -550,7 +550,7 @@ def main():
                           fcst_run_name=args.fcst_run_name, cycle_interval=args.cycle_interval,
                           num_iterations=args.num_iterations)
     else:
-        raise ValueError(f"Unexpected command: {args.command}. Use either 'fcst_workflow' or 'hindcast_workflow'.")
+        raise ValueError(f"Unexpected command: {args.command}. Use either 'forecast_workflow' or 'hindcast_workflow'.")
 
 
 if __name__ == "__main__":
