@@ -294,9 +294,9 @@ class ForecastExecutionManager:
         self._status = RunStatus.POSTPROCESSED
 
 
-def run_fcst(valid_yaml: str, real_path: str, config_cache: ConfigCache):
+def run_workflow(valid_yaml: str, real_path: str, config_cache: ConfigCache):
     """
-    Execute ngen run for forecast period and cold start period (if provided)
+    Execute ngen run workflow for forecast period and cold start period (if provided)
     valid_yaml: path to validation yaml file from past calibration run
     real_path: path to realization file for a cold start or forecast period
     config_cache: ConfigCache containing pre-loaded config and extracted values
@@ -426,7 +426,7 @@ def read_troute_output(
     return output
 
 
-def fcst_workflow(input_path, valid_yaml, fcst_run_name, use_cold_start=False):
+def run_forecast(valid_yaml, real_path):
     """
     Run forecast workflow with optional cold start run
     """
@@ -435,43 +435,20 @@ def fcst_workflow(input_path, valid_yaml, fcst_run_name, use_cold_start=False):
     # Load config and extract once per workflow
     config_cache = ConfigCache(valid_yaml)
 
-    # Generate msw-mgr inputs for cold start run
-    if use_cold_start:
-        cold_start_real_path = build_fcst(input_path=input_path, valid_yaml=valid_yaml,
-                                          fcst_run_name=fcst_run_name, use_cold_start=True)
-        logger.info(f"Cold start realization file written to: {cold_start_real_path}")
-
-        # Run cold start
-        run_fcst(valid_yaml, cold_start_real_path, config_cache)
-        logger.info("Cold start ngen run completed")
-
-    # Generate msw-mgr inputs for forecast run
-    fcst_real_path = build_fcst(input_path=input_path, valid_yaml=valid_yaml,
-                                fcst_run_name=fcst_run_name)
-    logger.info(f"Forecast realization file written to: {fcst_real_path}")
-
-    # Run forecast
-    run_fcst(valid_yaml, fcst_real_path, config_cache)
-    logger.info("Forecast ngen run completed")
+    # Run forecast or cold start, depending on provided realization path
+    run_workflow(valid_yaml, real_path, config_cache)
+    logger.info("Ngen run completed")
 
 
-def hindcast_workflow(input_path, valid_yaml, fcst_run_name, cycle_interval, num_iterations):
+def run_hindcast(input_path, valid_yaml, fcst_run_name, cycle_interval, num_iterations):
     """
-    Run hindcast workflow with optional cold start and intermediate ana runs
+    Run hindcast workflow with warm start runs, initial cold start should be run separately
     Accepts cycle interval and number of intervals for repeated hindcasts
     """
     logger.info(f'Initializing hindcast runs from: {valid_yaml}')
 
     # Load config and extract once per workflow
     config_cache = ConfigCache(valid_yaml)
-
-    # Generate msw-mgr inputs for cold start run
-    cold_start_real_path = build_fcst(input_path=input_path, valid_yaml=valid_yaml,
-                                      fcst_run_name=fcst_run_name, use_cold_start=True)
-    logger.info(f"Cold start realization file written to: {cold_start_real_path}")
-
-    # Run cold start
-    run_fcst(valid_yaml, cold_start_real_path, config_cache)
 
     # Generate hindcast interval times in hours
     hind_interval = list(range(0, num_iterations * cycle_interval, cycle_interval))
@@ -496,7 +473,7 @@ def hindcast_workflow(input_path, valid_yaml, fcst_run_name, cycle_interval, num
             logger.info(f"Warm start realization file for hindcast cycle {hind_cycle} written to: {warm_start_real_path}")
 
             # Run intermediate ana to generate hindcasting model states
-            run_fcst(valid_yaml, warm_start_real_path, config_cache)
+            run_workflow(valid_yaml, warm_start_real_path, config_cache)
             logger.info(f"Warm start run for hindcast cycle {hind_cycle} completed")
 
         # Create hindcast input files
@@ -505,7 +482,7 @@ def hindcast_workflow(input_path, valid_yaml, fcst_run_name, cycle_interval, num
         logger.info(f"Hindcast run {hind_cycle} realization file written to: {hind_real_path}")
 
         # Run hindcasting period
-        run_fcst(valid_yaml, hind_real_path, config_cache)
+        run_workflow(valid_yaml, hind_real_path, config_cache)
         logger.info(f"Hindcast run {hind_cycle} completed")
 
         # Store previous hindcast cycle value to set next warm start duration
@@ -520,16 +497,16 @@ def parse_args():
 
     # Define parent parser for shared arguments
     parent_parser = argparse.ArgumentParser(add_help=False)
-    parent_parser.add_argument('input_path', type=str, help='Path to input.config file for forecast')
     parent_parser.add_argument('valid_yaml', type=str, help='Path to validation yaml file from previous run of nwm-cal-mgr')
-    parent_parser.add_argument("fcst_run_name", help="Name of the folder to be created for storing inputs/outputs from running ngen")
-    parent_parser.add_argument("--use_cold_start", action="store_true", help="Enable cold start flag when passed")
 
     # Subcommand: forecast_workflow
-    subparser.add_parser("forecast_workflow", parents=[parent_parser], help="Run forecast workflow")
+    forecast_workflow_sub = subparser.add_parser("forecast_workflow", parents=[parent_parser], help="Run forecast workflow")
+    forecast_workflow_sub.add_argument('real_path', type=str, help='Path to cold start or forecast period realization file')
 
     # Subcommand: hindcast_workflow
     hindcast_workflow_sub = subparser.add_parser("hindcast_workflow", parents=[parent_parser], help="Run hindcast workflow")
+    hindcast_workflow_sub.add_argument('input_path', type=str, help='Path to input.config file for forecast')
+    hindcast_workflow_sub.add_argument("fcst_run_name", help="Name of the folder to be created for storing inputs/outputs from running ngen")
     hindcast_workflow_sub.add_argument("cycle_interval", type=int, help="Cycle interval (in hours) between hindcast runs")
     hindcast_workflow_sub.add_argument("num_iterations", type=int, help="Number of hindcast cycles to perform")
 
@@ -543,12 +520,11 @@ def main():
 
     # Run fcst/hindcast workflows
     if args.command == "forecast_workflow":
-        fcst_workflow(input_path=args.input_path, valid_yaml=args.valid_yaml,
-                      fcst_run_name=args.fcst_run_name, use_cold_start=args.use_cold_start)
+        run_forecast(valid_yaml=args.valid_yaml, real_path=args.real_path)
     elif args.command == "hindcast_workflow":
-        hindcast_workflow(input_path=args.input_path, valid_yaml=args.valid_yaml,
-                          fcst_run_name=args.fcst_run_name, cycle_interval=args.cycle_interval,
-                          num_iterations=args.num_iterations)
+        run_hindcast(valid_yaml=args.valid_yaml, input_path=args.input_path,
+                     fcst_run_name=args.fcst_run_name, cycle_interval=args.cycle_interval,
+                     num_iterations=args.num_iterations)
     else:
         raise ValueError(f"Unexpected command: {args.command}. Use either 'forecast_workflow' or 'hindcast_workflow'.")
 
