@@ -30,6 +30,12 @@ RUN --mount=type=cache,target=/root/.cache/pip,id=pip-cache \
         #"geopandas~=1.1.1"; \
     pip3 cache purge
 
+# Install MSWM package
+RUN --mount=type=cache,target=/root/.cache/pip,id=pip-cache \
+    set -eux; \
+    pip3 install mswm@git+https://github.com/NGWPC/nwm-msw-mgr.git@development ; \
+    pip3 cache purge
+
 # Install into the existing virtual environment without upgrading base packages
 RUN set -eux; \
     pip3 install --no-deps . || pip3 install .; \
