@@ -74,14 +74,14 @@ run_forecast(
 
 ### Hindcast Workflow
 
-Run repeated hindcast cycles at regular intervals, with start up states provided by warm start runs. Cold start run must be executed separately using fcst_workflow.
+Run repeated hindcast cycles at regular intervals, with start up states provided by warm start runs. Cold start run must be executed separately using run_forecast.
 
 #### CLI
 
 ```bash
 python -m nwm_fcst_mgr run_hindcast \
-    /path/to/input.config \
     /path/to/valid.yaml \
+    /path/to/input.config \
     my_hindcast_run \
     3 \
     10 \
@@ -93,8 +93,8 @@ python -m nwm_fcst_mgr run_hindcast \
 from nwm_fcst_mgr.forecast import run_hindcast
 
 run_hindcast(
-    input_path='/path/to/input.config',
     valid_yaml='/path/to/valid.yaml',
+    input_path='/path/to/input.config',
     fcst_run_name='my_forecast_run',
     cycle_interval=3,
     num_iterations=10
@@ -102,8 +102,8 @@ run_hindcast(
 ```
 
 #### Arguments
-- `input_path` - Path to forecast input configuration file (from nwm-msw-mgr)
 - `valid_yaml` - Path to validation yaml file from previous calibration run (from nwm-cal-mgr)
+- `input_path` - Path to forecast input configuration file (from nwm-msw-mgr)
 - `my_hindcast_run` - Name for the hindcast run folder
 - `cycle_interval` - Cycle interval in hours (spacing between hindcast cycles)
 - `num_iterations` - Number of hindcast cycles to perform

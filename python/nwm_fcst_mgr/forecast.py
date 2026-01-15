@@ -502,11 +502,11 @@ def parse_args():
     parent_parser.add_argument('valid_yaml', type=str, help='Path to validation yaml file from previous run of nwm-cal-mgr')
 
     # Subcommand: forecast_workflow
-    forecast_workflow_sub = subparser.add_parser("forecast_workflow", parents=[parent_parser], help="Run forecast workflow")
+    forecast_workflow_sub = subparser.add_parser("run_forecast", parents=[parent_parser], help="Run forecast workflow")
     forecast_workflow_sub.add_argument('real_path', type=str, help='Path to cold start or forecast period realization file')
 
     # Subcommand: hindcast_workflow
-    hindcast_workflow_sub = subparser.add_parser("hindcast_workflow", parents=[parent_parser], help="Run hindcast workflow")
+    hindcast_workflow_sub = subparser.add_parser("run_hindcast", parents=[parent_parser], help="Run hindcast workflow")
     hindcast_workflow_sub.add_argument('input_path', type=str, help='Path to input.config file for forecast')
     hindcast_workflow_sub.add_argument("fcst_run_name", help="Name of the folder to be created for storing inputs/outputs from running ngen")
     hindcast_workflow_sub.add_argument("cycle_interval", type=int, help="Cycle interval (in hours) between hindcast runs")
@@ -521,9 +521,9 @@ def main():
     args = parse_args()
 
     # Run fcst/hindcast workflows
-    if args.command == "forecast_workflow":
+    if args.command == "run_forecast":
         run_forecast(valid_yaml=args.valid_yaml, real_path=args.real_path)
-    elif args.command == "hindcast_workflow":
+    elif args.command == "run_hindcast":
         run_hindcast(valid_yaml=args.valid_yaml, input_path=args.input_path,
                      fcst_run_name=args.fcst_run_name, cycle_interval=args.cycle_interval,
                      num_iterations=args.num_iterations)
