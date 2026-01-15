@@ -4,8 +4,8 @@ ARG  NGEN_IMAGE_TAG=latest
 
 # Uncomment when building ngen locally or if ngen-int image is available locally
 # modify to use image tag for local ngen image if needed
-#FROM ngen
-FROM mswm
+FROM ngen
+# FROM mswm
 
 # Activate the existing virtual environment
 ENV PATH="/ngen-app/ngen-python/bin:${PATH}"
