@@ -263,7 +263,7 @@ class ForecastExecutionManager:
             raise RuntimeError(f"Invalid self._status: {self._status} (expected {RunStatus.EXECUTION_SUCCESS})")
 
         # move output files to output directory
-        run_output_dir = self.out_dir / "output/"
+        run_output_dir = self.out_dir / "Output/"
         run_output_dir.mkdir(parents=True, exist_ok=True)
         for pat1 in ["cat*.csv", "nex*.csv", "troute*.nc"]:
             for f1 in glob.glob(f"{self.out_dir}/{pat1}"):
