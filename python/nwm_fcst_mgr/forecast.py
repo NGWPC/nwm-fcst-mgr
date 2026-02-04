@@ -255,7 +255,7 @@ class ForecastExecutionManager:
         else:
             logger.info(f"Returning while ngen is running at: {self.proc}")
 
-    def postprocess(self) -> None:
+    def postprocess(self, suppress_output: bool = False) -> None:
         """Postprocess results after ngen finishes running."""
         # TODO could assert that certain csv and nc files exist and are non-empty
 
@@ -271,40 +271,43 @@ class ForecastExecutionManager:
 
         logger.info(f"NGEN outputs moved to: {run_output_dir}")
 
-        # read troute output file
-        outfile = glob.glob(f"{run_output_dir}/troute*.nc")[0]
-        logger.info(f"Reading T-route output file: {outfile}")
-        output = read_troute_output(self.gage0, self.valid_config["model"]["crosswalk"], self.gpkg_cats, outfile)
+        if not suppress_output:
 
-        # plot the hydrograph
-        plot_path = Path(run_output_dir, self.gage0 + "_hydrograph.png")
-        output.plot(y="sim_flow", kind="line")
-        plt.xlabel("Time")
-        plt.ylabel("Streamflow (m^3/s)")
-        plt.savefig(plot_path, bbox_inches="tight")
+            # read troute output file
+            outfile = glob.glob(f"{run_output_dir}/troute*.nc")[0]
+            logger.info(f"Reading T-route output file: {outfile}")
+            output = read_troute_output(self.gage0, self.valid_config["model"]["crosswalk"], self.gpkg_cats, outfile)
 
-        logger.info(f"Hydrograph plot saved to: {plot_path}")
+            # plot the hydrograph
+            plot_path = Path(run_output_dir, self.gage0 + "_hydrograph.png")
+            output.plot(y="sim_flow", kind="line")
+            plt.xlabel("Time")
+            plt.ylabel("Streamflow (m^3/s)")
+            plt.savefig(plot_path, bbox_inches="tight")
 
-        # save streamflow simulation to csv
-        self.output_csv = Path(run_output_dir, self.gage0 + "_output.csv")
-        output.to_csv(self.output_csv)
+            logger.info(f"Hydrograph plot saved to: {plot_path}")
 
-        logger.info(f"Fcst-mgr NGEN run outputs saved at: {run_output_dir}")
+            # save streamflow simulation to csv
+            self.output_csv = Path(run_output_dir, self.gage0 + "_output.csv")
+            output.to_csv(self.output_csv)
+
+            logger.info(f"Fcst-mgr NGEN run outputs saved at: {run_output_dir}")
 
         self._status = RunStatus.POSTPROCESSED
 
 
-def run_workflow(valid_yaml: str, real_path: str, config_cache: ConfigCache):
+def run_workflow(valid_yaml: str, real_path: str, config_cache: ConfigCache, suppress_output: bool = False):
     """
     Execute ngen run workflow for forecast period and cold start period (if provided)
     valid_yaml: path to validation yaml file from past calibration run
     real_path: path to realization file for a cold start or forecast period
     config_cache: ConfigCache containing pre-loaded config and extracted values
+    suppress_output: suppress postprocess output of plot and csv of streamflow
     """
     with ForecastExecutionManager(valid_yaml, real_path, config_cache) as fem:
         fem.preprocess()
         fem.execute(wait=True)
-        fem.postprocess()
+        fem.postprocess(suppress_output)
 
 
 def load_yaml(file_path: str) -> dict:
@@ -472,8 +475,8 @@ def run_hindcast(input_path, valid_yaml, fcst_run_name, cycle_interval, num_iter
                                               fcst_run_name=hind_run_name, use_warm_start=True, hind_cycle=hind_cycle, prev_hind_cycle=prev_hind_cycle)
             logger.info(f"Warm start realization file for hindcast cycle {hind_cycle} written to: {warm_start_real_path}")
 
-            # Run intermediate ana to generate hindcasting model states
-            run_workflow(valid_yaml, warm_start_real_path, config_cache)
+            # Execute warm start ngen run to generate hindcasting model states
+            run_workflow(valid_yaml, warm_start_real_path, config_cache, suppress_output=True)
             logger.info(f"Warm start run for hindcast cycle {hind_cycle} completed")
 
         # Create hindcast input files
