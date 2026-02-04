@@ -529,6 +529,51 @@ def run_hindcast(input_path, valid_yaml, fcst_run_name, cycle_interval, num_iter
         prev_hind_cycle = hind_cycle
 
 
+def run_lagged_ensemble(input_path, valid_yaml, fcst_run_name):
+    """
+    Run lagged ensemble workflow, loading from open and closed loop AnA states
+    """
+    logger.info(f'Initializing lagged ensemble runs from: {valid_yaml}')
+
+    # Load config and extract once per workflow
+    config_cache = ConfigCache(valid_yaml)
+
+    # Set list of medium range lagged ensemble runs and hours of forcing lag
+    ens_members = {
+        'no_da': 0,
+        'mem1': 0,
+        'mem2': 6,
+        'mem3': 12,
+        'mem4': 18,
+        'mem5': 24,
+        'mem6': 30
+    }
+
+    # Loop through lagged ensemble members
+    for member, lag in ens_members.items():
+
+        logger.info(f"Initializing lagged ensemble run for medium range {member}")
+
+        # Format run name for lagged ensemble member
+        member_run_name = f"{fcst_run_name}_{member}"
+
+        if member == "no_da":
+            # TODO no_da member should load state from Open Loop AnA run
+            pass
+        else:
+            # TODO all other members should load state from Closed Loop AnA run
+            pass
+
+        # Create lagged ensemble member input files
+        member_real_path = build_fcst(input_path=input_path, valid_yaml=valid_yaml,
+                                      fcst_run_name=member_run_name, use_lagged_ens=True, forcing_lag=lag)
+        logger.info(f"Lagged ensemble {member} member realization file written to: {member_real_path}")
+
+        # Run hindcasting period
+        run_workflow(valid_yaml, member_real_path, config_cache)
+        logger.info(f"Lagged ensemble {member} member run completed")
+
+
 def parse_args():
     # Create command line parser
     parser = argparse.ArgumentParser(prog="nwm-fcst-mgr",
