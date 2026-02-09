@@ -9,3 +9,4 @@ docker.md
 .gitpod.Dockerfile
 .gitpod.yml 
 sonar-project.properties
+*_git_info.json
