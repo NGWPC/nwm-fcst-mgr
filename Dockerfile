@@ -1,10 +1,32 @@
 # syntax=docker/dockerfile:1.4
-ARG  NGEN_IMAGE_TAG=latest
-FROM ghcr.io/ngwpc/ngen:${NGEN_IMAGE_TAG}
+ARG ORG=ngwpc
+ARG NGEN_IMAGE_TAG=latest
+ARG NGEN_IMAGE=ghcr.io/ngwpc/ngen:${NGEN_IMAGE_TAG}
+FROM ${NGEN_IMAGE}
 
 # Uncomment when building ngen locally or if ngen-int image is available locally
 # modify to use image tag for local ngen image if needed
 #FROM ngen
+
+# OCI Metadata Arguments
+ARG NGEN_IMAGE
+ARG BASE_IMAGE_DIGEST="unknown"
+ARG BASE_IMAGE_REVISION="unknown"
+ARG IMAGE_SOURCE="unknown"
+ARG IMAGE_VENDOR="unknown"
+ARG IMAGE_VERSION="unknown"
+ARG IMAGE_REVISION="unknown"
+ARG IMAGE_CREATED="unknown"
+
+# OCI Standard Labels
+LABEL org.opencontainers.image.base.name="${NGEN_IMAGE}" \
+    org.opencontainers.image.base.digest="${BASE_IMAGE_DIGEST}" \
+    io.ngwpc.image.base.revision="${BASE_IMAGE_REVISION}" \
+    org.opencontainers.image.source="${IMAGE_SOURCE}" \
+    org.opencontainers.image.vendor="${IMAGE_VENDOR}" \
+    org.opencontainers.image.version="${IMAGE_VERSION}" \
+    org.opencontainers.image.revision="${IMAGE_REVISION}" \
+    org.opencontainers.image.created="${IMAGE_CREATED}"
 
 # Activate the existing virtual environment
 ENV PATH="/ngen-app/ngen-python/bin:${PATH}"
