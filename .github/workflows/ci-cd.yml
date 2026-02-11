@@ -173,6 +173,20 @@ jobs:
             IMAGE_REVISION=${{ needs.setup.outputs.commit_sha }}
             IMAGE_CREATED=${{ needs.setup.outputs.build_date }}
             CI_COMMIT_REF_NAME=${{ needs.setup.outputs.clean_ref }}
+
+  unit-test:
+    name: unit-test
+    if: |
+      (github.event_name == 'pull_request') ||
+      (github.event_name == 'push') ||
+      (github.event_name == 'workflow_dispatch')
+    runs-on: ubuntu-latest
+    needs:
+      - setup
+      - build
+    container:
+      image: ${{ needs.setup.outputs.image_base }}:${{ needs.setup.outputs.test_image_tag }}
+    steps:
       - name: Run unit tests
         run: |
           echo "TODO: add unit tests here"
