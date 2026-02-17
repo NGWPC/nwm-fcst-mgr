@@ -434,6 +434,13 @@ def read_troute_output(
 def run_forecast(valid_yaml, real_path):
     """
     Run forecast workflow with optional cold start run
+
+    Parameters
+    ---------
+    input_path : str
+        Path to input.config file for hindcast
+    valid_yaml : str
+        Path to validation yaml file from previous run of nwm-cal-mgr
     """
     logger.info(f'Initializing forecast run from: {valid_yaml}')
 
@@ -531,9 +538,22 @@ def run_hindcast(input_path, valid_yaml, fcst_run_name, cycle_interval, num_iter
         prev_hind_cycle = hind_cycle
 
 
-def run_lagged_ensemble(input_path, valid_yaml, fcst_run_name):
+def run_lagged_ensemble(input_path, valid_yaml, fcst_run_name, open_loop_state=None, closed_loop_state=None):
     """
     Run lagged ensemble workflow, loading from open and closed loop AnA states
+
+    Parameters
+    ---------
+    input_path : str
+        Path to input.config file for hindcast
+    valid_yaml : str
+        Path to validation yaml file from previous run of nwm-cal-mgr
+    fcst_run_name : str
+        Name of the folder to be created for storing inputs/outputs for hindcast
+    open_loop_state : str, optional
+        Path to directory containing open loop AnA state files to initialize no DA member
+    closed_loop_state : str, optional
+        Path to directory containing closed loop AnA state files to initialize all other members
     """
     logger.info(f'Initializing lagged ensemble runs from: {valid_yaml}')
 
@@ -559,16 +579,28 @@ def run_lagged_ensemble(input_path, valid_yaml, fcst_run_name):
         # Format run name for lagged ensemble member
         member_run_name = f"{fcst_run_name}_{member}"
 
+        # Set lagged ensemble kwargs
+        lag_ens_kwargs = {
+            'input_path': input_path,
+            'valid_yaml': valid_yaml,
+            'fcst_run_name': member_run_name,
+            'use_lagged_ens': True,
+            'lagged_ens_mem': member,
+            'forcing_lag': lag
+        }
+
+        # Load open loop AnA run state for no_da member, load closed loop AnA run state for all other members
         if member == "no_da":
-            # TODO no_da member should load state from Open Loop AnA run
-            pass
+            if open_loop_state is not None:
+                lag_ens_kwargs['load_state_from'] = open_loop_state
+                logger.info(f"Lagged ensember {member} member initialized with open loop state: {open_loop_state}")
         else:
-            # TODO all other members should load state from Closed Loop AnA run
-            pass
+            if closed_loop_state is not None:
+                lag_ens_kwargs['load_state_from'] = closed_loop_state
+                logger.info(f"Lagged ensember {member} member initialized with closed loop state: {closed_loop_state}")
 
         # Create lagged ensemble member input files
-        member_real_path = build_fcst(input_path=input_path, valid_yaml=valid_yaml,
-                                      fcst_run_name=member_run_name, use_lagged_ens=True, forcing_lag=lag)
+        member_real_path = build_fcst(**lag_ens_kwargs)
         logger.info(f"Lagged ensemble {member} member realization file written to: {member_real_path}")
 
         # Run hindcasting period
@@ -598,6 +630,13 @@ def parse_args():
     hindcast_workflow_sub.add_argument("num_iterations", type=int, help="Number of hindcast cycles to perform")
     hindcast_workflow_sub.add_argument("--cold_start_state", type=str, default=None, help="Path to directory containing cold start state files")
 
+    # Subcommand: lagged_ensembles_workflow
+    lagged_ens_workflow_sub = subparser.add_parser("run_lagged_ens", parents=[parent_parser], help="Run lagged ensembles workflow")
+    lagged_ens_workflow_sub.add_argument('input_path', type=str, help='Path to input.config file for forecast')
+    lagged_ens_workflow_sub.add_argument("fcst_run_name", help="Name of the folder to be created for storing inputs/outputs from running ngen")
+    lagged_ens_workflow_sub.add_argument("--open_loop_state", type=str, default=None, help="Path to directory containing open loop ana state files")
+    lagged_ens_workflow_sub.add_argument("--closed_loop_state", type=str, default=None, help="Path to directory containing closed loop ana state files")
+
     return parser.parse_args()
 
 
@@ -613,8 +652,12 @@ def main():
         run_hindcast(valid_yaml=args.valid_yaml, input_path=args.input_path,
                      fcst_run_name=args.fcst_run_name, cycle_interval=args.cycle_interval,
                      num_iterations=args.num_iterations, cold_start_state=args.cold_start_state)
+    elif args.command == "run_lagged_ens":
+        run_lagged_ensemble(valid_yaml=args.valid_yaml, input_path=args.input_path,
+                            fcst_run_name=args.fcst_run_name, open_loop_state=args.open_loop_state,
+                            closed_loop_state=args.close_loop_state)
     else:
-        raise ValueError(f"Unexpected command: {args.command}. Use either 'forecast_workflow' or 'hindcast_workflow'.")
+        raise ValueError(f"Unexpected command: {args.command}. Use either 'run_forecast', 'run_hindcast', or 'run_lagged_ens'.")
 
 
 if __name__ == "__main__":

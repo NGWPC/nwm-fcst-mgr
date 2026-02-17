@@ -96,7 +96,7 @@ from nwm_fcst_mgr.forecast import run_hindcast
 run_hindcast(
     valid_yaml='/path/to/valid.yaml',
     input_path='/path/to/input.config',
-    fcst_run_name='my_forecast_run',
+    fcst_run_name='my_hindcast_run',
     cycle_interval=3,
     num_iterations=10,
     cold_start_state='/path/to/cold_start_state/'
@@ -114,6 +114,43 @@ run_hindcast(
 
 #### Hindcast Example
 With `cycle_interval=3` and `num_iterations=10`, hindcast runs will be executed at 0, 3, 6, 9, 12, 15, 18, 21, 24, 27 hours.
+
+
+### Lagged Ensemble Workflow
+
+Run medium range lagged ensembles cycles with forcing inputs lagged at 6 hour intervals, with open and closed loop AnA start up states. Members 1 and no_da have no forcing time lags, while Members 2-6 have sequential 6 hour time lags. ALl lagged ensemble ngen runs are orchestrated to begin at the same time and run for either 10 days (Members 1 and no_da) or 8.5 days (Members 2-6). The lagged ensemble workflow can only be executed with a medium range configuration.
+
+#### CLI
+
+```bash
+python -m nwm_fcst_mgr run_lagged_ens \
+    /path/to/valid.yaml \
+    /path/to/input.config \
+    my_lagged_ens_run \
+    --open_loop_state /path/to/open_loop_state/ \
+    --closed_loop_state /path/to/closed_loop_state/ \
+```
+
+#### Python
+
+```python
+from nwm_fcst_mgr.forecast import run_lagged_ens
+
+run_lagged_ens(
+    valid_yaml='/path/to/valid.yaml',
+    input_path='/path/to/input.config',
+    fcst_run_name='my_lagged_ens_run',
+    open_loop_state='/path/to/open_loop_state/',
+    closed_loop_state='/path/to/closed_loop_state/'
+)
+```
+
+#### Arguments
+- `valid_yaml` - Path to validation yaml file from previous calibration run (from nwm-cal-mgr)
+- `input_path` - Path to forecast input configuration file (from nwm-msw-mgr)
+- `my_lagged_ens_run` - Name for the lagged ensemble run folder
+- `--open_start_state` - Path to open loop AnA state to initialize no data assimilation member
+- `--closed_start_state` - Path to closed loop AnA state to initialize members 1-6
 
 
 ## Docker container
