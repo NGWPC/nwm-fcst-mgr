@@ -85,6 +85,7 @@ python -m nwm_fcst_mgr run_hindcast \
     my_hindcast_run \
     3 \
     10 \
+    --cold_start_state '/path/to/cold_start_state/' \
 ```
 
 #### Python
@@ -97,7 +98,8 @@ run_hindcast(
     input_path='/path/to/input.config',
     fcst_run_name='my_forecast_run',
     cycle_interval=3,
-    num_iterations=10
+    num_iterations=10,
+    cold_start_state='/path/to/cold_start_state/'
 )
 ```
 
@@ -107,6 +109,8 @@ run_hindcast(
 - `my_hindcast_run` - Name for the hindcast run folder
 - `cycle_interval` - Cycle interval in hours (spacing between hindcast cycles)
 - `num_iterations` - Number of hindcast cycles to perform
+- `--cold_start_state` - (Optional) Path to cold start state to initialize hindcasting workflow
+
 
 #### Hindcast Example
 With `cycle_interval=3` and `num_iterations=10`, hindcast runs will be executed at 0, 3, 6, 9, 12, 15, 18, 21, 24, 27 hours.
