@@ -445,10 +445,27 @@ def run_forecast(valid_yaml, real_path):
     logger.info("Ngen run completed")
 
 
-def run_hindcast(input_path, valid_yaml, fcst_run_name, cycle_interval, num_iterations):
+def run_hindcast(input_path, valid_yaml, fcst_run_name, cycle_interval, num_iterations, cold_start_state=None):
     """
     Run hindcast workflow with warm start runs, initial cold start should be run separately
     Accepts cycle interval and number of intervals for repeated hindcasts
+
+    Parameters
+    ---------
+    input_path : str
+        Path to input.config file for hindcast
+    valid_yaml : str
+        Path to validation yaml file from previous run of nwm-cal-mgr
+    fcst_run_name : str
+        Name of the folder to be created for storing inputs/outputs for hindcast
+    cycle_interval : int
+        Cycle interval (in hours) between hindcast runs
+    num_iterations : int
+        Number of hindcast cycles to perform
+    cold_start_state : str, optional
+        Path to directory containing state files to load at start of first hindcast
+        If provided, will be used for first hindcast cycle (hind_cycle=0)
+        Subsequent cycles will use warm start states
     """
     logger.info(f'Initializing hindcast runs from: {valid_yaml}')
 
@@ -473,17 +490,37 @@ def run_hindcast(input_path, valid_yaml, fcst_run_name, cycle_interval, num_iter
         if hind_cycle != 0:
 
             # Generate msw-mgr inputs for warm start run for hindcast iteration
-            warm_start_real_path = build_fcst(input_path=input_path, valid_yaml=valid_yaml,
-                                              fcst_run_name=hind_run_name, use_warm_start=True, hind_cycle=hind_cycle, prev_hind_cycle=prev_hind_cycle)
+            warm_start_real_path, warm_start_state = build_fcst(input_path=input_path, valid_yaml=valid_yaml,
+                                                                fcst_run_name=hind_run_name, use_warm_start=True,
+                                                                hind_cycle=hind_cycle, prev_hind_cycle=prev_hind_cycle,
+                                                                save_state=True)
             logger.info(f"Warm start realization file for hindcast cycle {hind_cycle} written to: {warm_start_real_path}")
 
             # Execute warm start ngen run to generate hindcasting model states
             run_workflow(valid_yaml, warm_start_real_path, config_cache, suppress_output=True)
             logger.info(f"Warm start run for hindcast cycle {hind_cycle} completed")
+            logger.info(f"Warm start state saved to {warm_start_state}")
 
         # Create hindcast input files
-        hind_real_path = build_fcst(input_path=input_path, valid_yaml=valid_yaml,
-                                    fcst_run_name=hind_run_name, use_hindcast=True, hind_cycle=hind_cycle)
+        hind_kwargs = {
+            'input_path': input_path,
+            'valid_yaml': valid_yaml,
+            'fcst_run_name': hind_run_name,
+            'use_hindcast': True,
+            'hind_cycle': hind_cycle
+        }
+
+        # Load from cold start state for first cycle if it's provided
+        if hind_cycle == 0:
+            if cold_start_state is not None:
+                hind_kwargs['load_state_from'] = cold_start_state
+                logger.info(f"Hindcast cycle {hind_cycle} loading state from: {cold_start_state}")
+        # Otherwise, load from warm start state
+        else:
+            hind_kwargs['load_state_from'] = warm_start_state
+            logger.info(f"Hindcast cycle {hind_cycle} loading state from: {warm_start_state}")
+
+        hind_real_path = build_fcst(**hind_kwargs)
         logger.info(f"Hindcast run {hind_cycle} realization file written to: {hind_real_path}")
 
         # Run hindcasting period
@@ -514,6 +551,7 @@ def parse_args():
     hindcast_workflow_sub.add_argument("fcst_run_name", help="Name of the folder to be created for storing inputs/outputs from running ngen")
     hindcast_workflow_sub.add_argument("cycle_interval", type=int, help="Cycle interval (in hours) between hindcast runs")
     hindcast_workflow_sub.add_argument("num_iterations", type=int, help="Number of hindcast cycles to perform")
+    hindcast_workflow_sub.add_argument("--cold_start_state", type=str, default=None, help="Path to directory containing cold start state files")
 
     return parser.parse_args()
 
@@ -529,7 +567,7 @@ def main():
     elif args.command == "run_hindcast":
         run_hindcast(valid_yaml=args.valid_yaml, input_path=args.input_path,
                      fcst_run_name=args.fcst_run_name, cycle_interval=args.cycle_interval,
-                     num_iterations=args.num_iterations)
+                     num_iterations=args.num_iterations, cold_start_state=args.cold_start_state)
     else:
         raise ValueError(f"Unexpected command: {args.command}. Use either 'forecast_workflow' or 'hindcast_workflow'.")
 
