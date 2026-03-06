@@ -653,7 +653,7 @@ def main():
     elif args.command == "run_lagged_ens":
         run_lagged_ensemble(valid_yaml=args.valid_yaml, input_path=args.input_path,
                             fcst_run_name=args.fcst_run_name, open_loop_state=args.open_loop_state,
-                            closed_loop_state=args.close_loop_state)
+                            closed_loop_state=args.closed_loop_state)
     else:
         raise ValueError(f"Unexpected command: {args.command}. Use either 'run_forecast', 'run_hindcast', or 'run_lagged_ens'.")
 
