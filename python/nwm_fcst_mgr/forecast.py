@@ -11,6 +11,8 @@ from pathlib import Path
 import geopandas as gpd
 import pandas as pd
 import netCDF4
+import configparser
+from datetime import datetime, timedelta
 
 import matplotlib.pyplot as plt
 import yaml
@@ -20,6 +22,16 @@ from nwm_fcst_mgr.log_level import log_level_set
 from nwm_fcst_mgr.exceptions import NgenCalledProcessError, NgenIntentionallyStoppedError
 from nwm_fcst_mgr.utils import set_os_env_key, OS_ENV_KEY_RESULTS_DIR
 from mswm.manager import build_fcst
+
+# Set valid cycle hours for each forecast configuration
+VALID_CYCLE_HOURS = {
+    "medium_range_blend": [0, 6, 12, 18],
+    "medium_range_blend_alaska": [0, 6, 12, 18],
+    "long_range_mem1": [0, 6, 12, 18],
+    "long_range_mem2": [0, 6, 12, 18],
+    "long_range_mem3": [0, 6, 12, 18],
+    "long_range_mem4": [0, 6, 12, 18],
+}
 
 # setup the logger
 logger = logging.getLogger(__name__)
@@ -312,6 +324,36 @@ def run_workflow(valid_yaml: str, real_path: str, config_cache: ConfigCache, sup
         fem.postprocess(suppress_output)
 
 
+def load_config(file_path: str) -> configparser.ConfigParser:
+    """
+    Read msw-mgr input.config file and return ConfigParser object
+    """
+    # Confirm input file exists
+    file_path = Path(file_path).absolute()
+    if not file_path.exists():
+        try:
+            raise FileNotFoundError(f'Input file not found: {file_path}')
+        except FileNotFoundError as e:
+            logger.critical(e)
+            raise
+
+    # Read the configuration file
+    try:
+        config = configparser.ConfigParser()
+        config.read(file_path)
+    except FileNotFoundError as e:
+        logger.critical(f"Input file not found: {file_path}\n{e}")
+        raise
+    except configparser.Error as e:
+        logger.critical(f"ConfigParser error reading config file: {file_path}\n{e}")
+        raise
+    except Exception as e:
+        logger.critical(f"Unexpected error loading config: {file_path}\n{e}")
+        raise
+
+    return config
+
+
 def load_yaml(file_path: str) -> dict:
     """
     Read yaml-based configuration file from previous ngen calibration run
@@ -431,6 +473,48 @@ def read_troute_output(
     return output
 
 
+def check_hind_intervals(input_path: str, hind_interval: list) -> None:
+    """
+    Check that all hindcast intervals fall on valid cycle hours for a given forcing configuration
+
+    Parameters
+    ----------
+    input_path: str
+        Path to input.config file
+    hind_interval: list
+        List of hindcast intervals in hours
+    """
+    # Load config file
+    config = load_config(input_path)
+
+    # Read values from config file
+    try:
+        cycle_datetime = config['Forcing']['cycle_datetime']
+        forcing_configuration = config['Forcing']['forcing_configuration']
+    except KeyError as e:
+        logger.critical(f"Error reading values from [Forcing] section of input.config: {e}")
+        raise
+
+    # Check if configuration has valid cycle hours restrictions
+    config_key = next((k for k in VALID_CYCLE_HOURS if k in forcing_configuration), None)
+    if config_key is None:
+        return  # No restriction for given configuration
+
+    # Check that hindcast interval falls on valid cycle time
+    valid_hours = VALID_CYCLE_HOURS[config_key]
+    cycle_dt = datetime.strptime(cycle_datetime, "%Y-%m-%d %H:%M:%S")
+
+    for interval in hind_interval:
+        interval_dt = cycle_dt + timedelta(hours=interval)
+        if interval_dt.hour not in valid_hours:
+            msg = (
+                f"Hindcast iteration at {interval} hours falls on hour {interval_dt.hour}, which is not a valid cycle hour for {forcing_configuration}. "
+                f"Valid hours: {valid_hours}"
+            )
+            logger.critical(msg)
+            raise ValueError(msg)
+
+
 def run_forecast(valid_yaml, real_path):
     """
     Run forecast workflow with optional cold start run
@@ -481,6 +565,9 @@ def run_hindcast(input_path, valid_yaml, fcst_run_name, cycle_interval, num_iter
 
     # Generate hindcast interval times in hours
     hind_interval = list(range(0, num_iterations * cycle_interval, cycle_interval))
+
+    # Validate that all hindcast intervals fall on valid cycle hours for this configuration
+    check_hind_intervals(input_path, hind_interval)
 
     logger.info(f"Initializing hindcast runs at intervals: {hind_interval}")
 
