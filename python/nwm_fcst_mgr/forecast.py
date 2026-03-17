@@ -166,6 +166,11 @@ class ForecastExecutionManager:
             logger.debug("ngen has already stopped")
             return
 
+        if self._status in (RunStatus.NOSTATUS, RunStatus.PREPROCESSED):
+            if self.proc is not None:
+                raise RuntimeError(f"Status is {self._status}, but self.proc is not None")
+            return
+
         if self.proc is None:
             raise RuntimeError("self.proc not initialized")
 
