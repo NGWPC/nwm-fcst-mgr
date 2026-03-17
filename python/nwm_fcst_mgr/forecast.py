@@ -20,6 +20,7 @@ import argparse
 
 from nwm_fcst_mgr.log_level import log_level_set
 from nwm_fcst_mgr.exceptions import NgenCalledProcessError, NgenIntentionallyStoppedError
+from nwm_fcst_mgr.ngen_cli import NgenCLI
 from nwm_fcst_mgr.utils import set_os_env_key, OS_ENV_KEY_RESULTS_DIR
 from mswm.manager import build_fcst
 
@@ -247,7 +248,17 @@ class ForecastExecutionManager:
         logger.info(f"Opening log file using mode {repr(log_file_open_mode)}: {log_file}")
         self.log_handle = open(log_file, log_file_open_mode)
 
-        self.cmd = f'{self.ngen_exe} {self.gpkg_cats} "all" {self.gpkg_nexus} "all" {self.real_path}'
+        ngen_cli = NgenCLI(
+            ngen_path=self.ngen_exe,
+            cats_path=self.gpkg_cats,
+            cats_subset_ids=None,
+            nexus_path=self.gpkg_nexus,
+            nexus_subset_ids=None,
+            realization_config_path=self.real_path,
+            partition_config_path=search_for_partition_config(self.real_path),
+        )
+        self.cmd = ngen_cli.ngen_cmd(as_string=True)
+
         self.cwd = str(self.out_dir)
         logger.info(f"Starting ngen via cmd: {self.cmd} from cwd: {self.cwd}")
         self.proc = subprocess.Popen(self.cmd, stdout=self.log_handle, stderr=self.log_handle, shell=True, cwd=self.cwd)
@@ -308,6 +319,26 @@ class ForecastExecutionManager:
             logger.info(f"Fcst-mgr NGEN run outputs saved at: {run_output_dir}")
 
         self._status = RunStatus.POSTPROCESSED
+
+
+def search_for_partition_config(realization_file: str) -> str:
+    """Search the realization folder for a partition configuration file.
+    If 0 are found, return None
+    If 1 is found, return its path.
+    If 2+ are found, raise an error."""
+    candidates: list[str] = []
+
+    realization_directory = os.path.dirname(os.path.realpath(realization_file))
+    for item in os.listdir(realization_directory):
+        if item.endswith("partition_config.json"):
+            candidates.append(os.path.join(realization_directory, item))
+    if len(candidates) == 0:
+        return None
+    if len(candidates) == 1:
+        return candidates[0]
+    raise ValueError(
+        f"Found {len(candidates)} candidates for partition config files (expected 0 or 1): {candidates}"
+    )
 
 
 def run_workflow(valid_yaml: str, real_path: str, config_cache: ConfigCache, suppress_output: bool = False):
