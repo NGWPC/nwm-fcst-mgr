@@ -482,13 +482,13 @@ def run_hindcast(input_path, valid_yaml, fcst_run_name, cycle_interval, num_iter
     # Generate hindcast interval times in hours
     hind_interval = list(range(0, num_iterations * cycle_interval, cycle_interval))
 
+    logger.info(f"Initializing hindcast runs at intervals: {hind_interval}")
+
     # Initialize previous hindcast cycle for coordinating warm starts
     prev_hind_cycle = 0
 
     # Loop through hindcast intervals
     for hind_cycle in hind_interval:
-
-        logger.info(f"Initializing hindcast run at interval: + {hind_cycle} hours")
 
         # Format run name for hindcast cycle
         hind_run_name = fcst_run_name + '_' + str(hind_cycle)
@@ -496,16 +496,18 @@ def run_hindcast(input_path, valid_yaml, fcst_run_name, cycle_interval, num_iter
         # Skip warm start for first hindcast, which will use the cold start state
         if hind_cycle != 0:
 
+            logger.info(f"Initializing warm start AnA run for hindcast iteration at {hind_cycle} hours")
+
             # Generate msw-mgr inputs for warm start run for hindcast iteration
             warm_start_real_path, warm_start_state = build_fcst(input_path=input_path, valid_yaml=valid_yaml,
                                                                 fcst_run_name=hind_run_name, use_warm_start=True,
                                                                 hind_cycle=hind_cycle, prev_hind_cycle=prev_hind_cycle,
                                                                 save_state=True)
-            logger.info(f"Warm start realization file for hindcast cycle {hind_cycle} written to: {warm_start_real_path}")
+            logger.info(f"Warm start realization file for hindcast iteration at {hind_cycle} hours written to: {warm_start_real_path}")
 
             # Execute warm start ngen run to generate hindcasting model states
             run_workflow(valid_yaml, warm_start_real_path, config_cache, suppress_output=True)
-            logger.info(f"Warm start run for hindcast cycle {hind_cycle} completed")
+            logger.info(f"Warm start run for hindcast iteration at {hind_cycle} hours completed")
             logger.info(f"Warm start state saved to {warm_start_state}")
 
         # Create hindcast input files
@@ -517,22 +519,24 @@ def run_hindcast(input_path, valid_yaml, fcst_run_name, cycle_interval, num_iter
             'hind_cycle': hind_cycle
         }
 
+        logger.info(f"Initializing hindcast run for iteration at {hind_cycle} hours")
+
         # Load from cold start state for first cycle if it's provided
         if hind_cycle == 0:
             if cold_start_state is not None:
                 hind_kwargs['load_state_from'] = cold_start_state
-                logger.info(f"Hindcast cycle {hind_cycle} loading state from: {cold_start_state}")
+                logger.info(f"Hindcast iteration at {hind_cycle} hours loading state from: {cold_start_state}")
         # Otherwise, load from warm start state
         else:
             hind_kwargs['load_state_from'] = warm_start_state
-            logger.info(f"Hindcast cycle {hind_cycle} loading state from: {warm_start_state}")
+            logger.info(f"Hindcast iteration at {hind_cycle} hours loading state from: {warm_start_state}")
 
         hind_real_path = build_fcst(**hind_kwargs)
-        logger.info(f"Hindcast run {hind_cycle} realization file written to: {hind_real_path}")
+        logger.info(f"Hindcast realization file for iteration at {hind_cycle} hours written to: {hind_real_path}")
 
         # Run hindcasting period
         run_workflow(valid_yaml, hind_real_path, config_cache)
-        logger.info(f"Hindcast run {hind_cycle} completed")
+        logger.info(f"Hindcast run for iteration at {hind_cycle} hours completed")
 
         # Store previous hindcast cycle value to set next warm start duration
         prev_hind_cycle = hind_cycle
@@ -588,6 +592,8 @@ def run_lagged_ensemble(input_path, valid_yaml, fcst_run_name, open_loop_state=N
             'lagged_ens_mem': member,
             'forcing_lag': lag
         }
+
+        logger.info(f"Initializing lagged ensemble run for {member} member")
 
         # Load open loop AnA run state for no_da member, load closed loop AnA run state for all other members
         if member == "no_da":
