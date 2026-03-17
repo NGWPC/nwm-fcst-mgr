@@ -18,6 +18,7 @@ import matplotlib.pyplot as plt
 import yaml
 import argparse
 
+from nwm_fcst_mgr.consts import PARTITION_CONFIG_FILE_NAME_SUFFIX
 from nwm_fcst_mgr.log_level import log_level_set
 from nwm_fcst_mgr.exceptions import NgenCalledProcessError, NgenIntentionallyStoppedError
 from nwm_fcst_mgr.ngen_cli import NgenCLI
@@ -69,14 +70,24 @@ class ForecastExecutionManager:
     Context manager for executing forecast via asynchronous ngen call.
     To run asynchronously, use wait=False during call to execute().
     To halt execution, either exit the context manager, or call schedule_ngen_stoppage().
+
+    partition_file: (optional) path to partition configuration file.
+        If provided, the work will be divided among n processors where n in the number of partitions in this file.
     """
 
-    def __init__(self, valid_yaml: str, real_path: str, config_cache: ConfigCache = None):
+    def __init__(
+        self,
+        valid_yaml: str,
+        real_path: str,
+        config_cache: ConfigCache = None,
+        partition_file: str | None = None,
+    ):
         self._status = RunStatus.NOSTATUS
 
         self.valid_yaml = valid_yaml
         self.real_path = real_path
         self.config_cache = config_cache
+        self.partition_file = partition_file
 
         # Set from config_cache or preprocess)
         self.valid_config = None
@@ -255,7 +266,7 @@ class ForecastExecutionManager:
             nexus_path=self.gpkg_nexus,
             nexus_subset_ids=None,
             realization_config_path=self.real_path,
-            partition_config_path=search_for_partition_config(self.real_path),
+            partition_config_path=self.partition_file,
         )
         self.cmd = ngen_cli.ngen_cmd(as_string=True)
 
@@ -330,7 +341,7 @@ def search_for_partition_config(realization_file: str) -> str:
 
     realization_directory = os.path.dirname(os.path.realpath(realization_file))
     for item in os.listdir(realization_directory):
-        if item.endswith("partition_config.json"):
+        if item.endswith(f"{PARTITION_CONFIG_FILE_NAME_SUFFIX}.json"):
             candidates.append(os.path.join(realization_directory, item))
     if len(candidates) == 0:
         return None
@@ -341,15 +352,28 @@ def search_for_partition_config(realization_file: str) -> str:
     )
 
 
-def run_workflow(valid_yaml: str, real_path: str, config_cache: ConfigCache, suppress_output: bool = False):
+def run_workflow(
+    valid_yaml: str,
+    real_path: str,
+    config_cache: ConfigCache,
+    suppress_output: bool = False,
+    partition_file: str | None = None,
+):
     """
     Execute ngen run workflow for forecast period and cold start period (if provided)
     valid_yaml: path to validation yaml file from past calibration run
     real_path: path to realization file for a cold start or forecast period
     config_cache: ConfigCache containing pre-loaded config and extracted values
     suppress_output: suppress postprocess output of plot and csv of streamflow
+    partition_file: (optional) path to partition configuration file.
+        If provided, the work will be divided among n processors where n in the number of partitions in this file.
     """
-    with ForecastExecutionManager(valid_yaml, real_path, config_cache) as fem:
+    with ForecastExecutionManager(
+        valid_yaml,
+        real_path,
+        config_cache,
+        partition_file,
+    ) as fem:
         fem.preprocess()
         fem.execute(wait=True)
         fem.postprocess(suppress_output)
@@ -446,7 +470,6 @@ def read_troute_output(
         gpkg_file: Path,
         out_file: Path,
 ) -> pd.DataFrame:
-
     """
     Arguments:
     ---------
