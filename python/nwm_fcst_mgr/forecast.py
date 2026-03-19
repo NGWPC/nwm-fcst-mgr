@@ -19,6 +19,7 @@ import argparse
 from nwm_fcst_mgr.log_level import log_level_set
 from nwm_fcst_mgr.git_util import print_git_info_all
 from nwm_fcst_mgr.exceptions import NgenCalledProcessError, NgenIntentionallyStoppedError
+from nwm_fcst_mgr.utils import set_os_env_key, OS_ENV_KEY_RESULTS_DIR
 
 # setup the logger
 log_level_set()
@@ -183,8 +184,9 @@ class ForecastExecutionManager:
         """Preprocess an ngen run, validate some inputs, and set the execution status."""
 
         # set environment variable for ngencerf backend
-        os.environ["NGEN_RESULTS_DIR"] = str(Path(self.real_path).parent)
-        logging.info(f"Set environment variable NGEN_RESULTS_DIR to: {os.environ['NGEN_RESULTS_DIR']}")
+        set_os_env_key(
+            OS_ENV_KEY_RESULTS_DIR, str(Path(self.real_path).parent), override=False
+        )
 
         # Read validation yaml file
         self.valid_config = load_yaml(self.valid_yaml)
