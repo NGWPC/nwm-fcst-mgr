@@ -577,8 +577,6 @@ def run_hindcast(input_path, valid_yaml, fcst_run_name, cycle_interval, num_iter
     # Loop through hindcast intervals
     for hind_cycle in hind_interval:
 
-        # Format run name for hindcast cycle
-        hind_run_name = fcst_run_name + '_' + str(hind_cycle)
 
         # Skip warm start for first hindcast, which will use the cold start state
         if hind_cycle != 0:
@@ -587,7 +585,7 @@ def run_hindcast(input_path, valid_yaml, fcst_run_name, cycle_interval, num_iter
 
             # Generate msw-mgr inputs for warm start run for hindcast iteration
             warm_start_real_path, warm_start_state = build_fcst(input_path=input_path, valid_yaml=valid_yaml,
-                                                                fcst_run_name=hind_run_name, use_warm_start=True,
+                                                                fcst_run_name=fcst_run_name, use_warm_start=True,
                                                                 hind_cycle=hind_cycle, prev_hind_cycle=prev_hind_cycle,
                                                                 save_state=True)
             logger.info(f"Warm start realization file for hindcast iteration at {hind_cycle} hours written to: {warm_start_real_path}")
@@ -601,7 +599,7 @@ def run_hindcast(input_path, valid_yaml, fcst_run_name, cycle_interval, num_iter
         hind_kwargs = {
             'input_path': input_path,
             'valid_yaml': valid_yaml,
-            'fcst_run_name': hind_run_name,
+            'fcst_run_name': fcst_run_name,
             'use_hindcast': True,
             'hind_cycle': hind_cycle
         }
@@ -667,14 +665,11 @@ def run_lagged_ensemble(input_path, valid_yaml, fcst_run_name, open_loop_state=N
 
         logger.info(f"Initializing lagged ensemble run for medium range {member}")
 
-        # Format run name for lagged ensemble member
-        member_run_name = f"{fcst_run_name}_{member}"
-
         # Set lagged ensemble kwargs
         lag_ens_kwargs = {
             'input_path': input_path,
             'valid_yaml': valid_yaml,
-            'fcst_run_name': member_run_name,
+            'fcst_run_name': fcst_run_name,
             'use_lagged_ens': True,
             'lagged_ens_mem': member,
             'forcing_lag': lag
