@@ -52,7 +52,7 @@ RUN --mount=type=cache,target=/root/.cache/pip,id=pip-cache \
     pip3 cache purge
 
 # Install MSWM package
-ARG MSW_MGR_VERSION=jwade_NGWPC-8767_hindcasting
+ARG MSW_MGR_VERSION=development
 RUN --mount=type=cache,target=/root/.cache/pip,id=pip-cache \
     set -eux; \
     pip3 install mswm@git+https://github.com/NGWPC/nwm-msw-mgr.git@${MSW_MGR_VERSION} ; \
