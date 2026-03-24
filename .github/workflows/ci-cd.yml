@@ -19,6 +19,10 @@ on:
       - release-candidate
   workflow_dispatch:
     inputs:
+      branch:
+        description: 'Branch to run against'
+        required: false
+        type: string
       NGEN_IMAGE_TAG:
         description: 'NGEN_IMAGE_TAG'
         required: false
