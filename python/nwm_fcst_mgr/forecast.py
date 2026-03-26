@@ -586,6 +586,7 @@ def run_forecast(valid_yaml, real_path, partition_file: str | None = None):
         Path to validation yaml file from previous run of nwm-cal-mgr
     partition_file : str | None (optional) path to partition configuration file.
         If provided, the work will be divided among n processors where n in the number of partitions in this file.
+        TODO add multiprocessing support to run_hindcast and run_lagged_ensemble.
     """
     logger.info(f'Initializing forecast run from: {valid_yaml}')
 
