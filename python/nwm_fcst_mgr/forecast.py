@@ -574,7 +574,7 @@ def check_hind_intervals(input_path: str, hind_interval: list) -> None:
             raise ValueError(msg)
 
 
-def run_forecast(valid_yaml, real_path):
+def run_forecast(valid_yaml, real_path, partition_file: str | None = None):
     """
     Run forecast workflow with optional cold start run
 
@@ -584,6 +584,8 @@ def run_forecast(valid_yaml, real_path):
         Path to input.config file for hindcast
     valid_yaml : str
         Path to validation yaml file from previous run of nwm-cal-mgr
+    partition_file : str | None (optional) path to partition configuration file.
+        If provided, the work will be divided among n processors where n in the number of partitions in this file.
     """
     logger.info(f'Initializing forecast run from: {valid_yaml}')
 
@@ -591,7 +593,7 @@ def run_forecast(valid_yaml, real_path):
     config_cache = ConfigCache(valid_yaml)
 
     # Run forecast or cold start, depending on provided realization path
-    run_workflow(valid_yaml, real_path, config_cache)
+    run_workflow(valid_yaml, real_path, config_cache, partition_file=partition_file)
     logger.info("Ngen run completed")
 
 
