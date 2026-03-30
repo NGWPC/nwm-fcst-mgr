@@ -18,8 +18,10 @@ import matplotlib.pyplot as plt
 import yaml
 import argparse
 
+from nwm_fcst_mgr.consts import PARTITION_CONFIG_FILE_NAME_SUFFIX
 from nwm_fcst_mgr.log_level import log_level_set
 from nwm_fcst_mgr.exceptions import NgenCalledProcessError, NgenIntentionallyStoppedError
+from nwm_fcst_mgr.ngen_cli import NgenCLI
 from nwm_fcst_mgr.utils import set_os_env_key, OS_ENV_KEY_RESULTS_DIR
 from mswm.manager import build_fcst
 
@@ -68,14 +70,24 @@ class ForecastExecutionManager:
     Context manager for executing forecast via asynchronous ngen call.
     To run asynchronously, use wait=False during call to execute().
     To halt execution, either exit the context manager, or call schedule_ngen_stoppage().
+
+    partition_file: (optional) path to partition configuration file.
+        If provided, the work will be divided among n processors where n in the number of partitions in this file.
     """
 
-    def __init__(self, valid_yaml: str, real_path: str, config_cache: ConfigCache = None):
+    def __init__(
+        self,
+        valid_yaml: str,
+        real_path: str,
+        config_cache: ConfigCache = None,
+        partition_file: str | None = None,
+    ):
         self._status = RunStatus.NOSTATUS
 
         self.valid_yaml = valid_yaml
         self.real_path = real_path
         self.config_cache = config_cache
+        self.partition_file = partition_file
 
         # Set from config_cache or preprocess)
         self.valid_config = None
@@ -152,6 +164,11 @@ class ForecastExecutionManager:
             if self.proc.returncode is None:
                 raise RuntimeError(f"Expected process to have already stopped since status = {self._status}, but it has not")
             logger.debug("ngen has already stopped")
+            return
+
+        if self._status in (RunStatus.NOSTATUS, RunStatus.PREPROCESSED):
+            if self.proc is not None:
+                raise RuntimeError(f"Status is {self._status}, but self.proc is not None")
             return
 
         if self.proc is None:
@@ -247,7 +264,17 @@ class ForecastExecutionManager:
         logger.info(f"Opening log file using mode {repr(log_file_open_mode)}: {log_file}")
         self.log_handle = open(log_file, log_file_open_mode)
 
-        self.cmd = f'{self.ngen_exe} {self.gpkg_cats} "all" {self.gpkg_nexus} "all" {self.real_path}'
+        ngen_cli = NgenCLI(
+            ngen_path=self.ngen_exe,
+            cats_path=self.gpkg_cats,
+            cats_subset_ids=None,
+            nexus_path=self.gpkg_nexus,
+            nexus_subset_ids=None,
+            realization_config_path=self.real_path,
+            partition_config_path=self.partition_file,
+        )
+        self.cmd = ngen_cli.ngen_cmd(as_string=True)
+
         self.cwd = str(self.out_dir)
         logger.info(f"Starting ngen via cmd: {self.cmd} from cwd: {self.cwd}")
         self.proc = subprocess.Popen(self.cmd, stdout=self.log_handle, stderr=self.log_handle, shell=True, cwd=self.cwd)
@@ -310,15 +337,48 @@ class ForecastExecutionManager:
         self._status = RunStatus.POSTPROCESSED
 
 
-def run_workflow(valid_yaml: str, real_path: str, config_cache: ConfigCache, suppress_output: bool = False):
+def search_for_partition_config(realization_file: str) -> str:
+    """Search the realization folder for a partition configuration file.
+    If 0 are found, return None
+    If 1 is found, return its path.
+    If 2+ are found, raise an error."""
+    candidates: list[str] = []
+
+    realization_directory = os.path.dirname(os.path.realpath(realization_file))
+    for item in os.listdir(realization_directory):
+        if item.endswith(f"{PARTITION_CONFIG_FILE_NAME_SUFFIX}.json"):
+            candidates.append(os.path.join(realization_directory, item))
+    if len(candidates) == 0:
+        return None
+    if len(candidates) == 1:
+        return candidates[0]
+    raise ValueError(
+        f"Found {len(candidates)} candidates for partition config files (expected 0 or 1): {candidates}"
+    )
+
+
+def run_workflow(
+    valid_yaml: str,
+    real_path: str,
+    config_cache: ConfigCache,
+    suppress_output: bool = False,
+    partition_file: str | None = None,
+):
     """
     Execute ngen run workflow for forecast period and cold start period (if provided)
     valid_yaml: path to validation yaml file from past calibration run
     real_path: path to realization file for a cold start or forecast period
     config_cache: ConfigCache containing pre-loaded config and extracted values
     suppress_output: suppress postprocess output of plot and csv of streamflow
+    partition_file: (optional) path to partition configuration file.
+        If provided, the work will be divided among n processors where n in the number of partitions in this file.
     """
-    with ForecastExecutionManager(valid_yaml, real_path, config_cache) as fem:
+    with ForecastExecutionManager(
+        valid_yaml,
+        real_path,
+        config_cache,
+        partition_file,
+    ) as fem:
         fem.preprocess()
         fem.execute(wait=True)
         fem.postprocess(suppress_output)
@@ -415,7 +475,6 @@ def read_troute_output(
         gpkg_file: Path,
         out_file: Path,
 ) -> pd.DataFrame:
-
     """
     Arguments:
     ---------
@@ -515,7 +574,7 @@ def check_hind_intervals(input_path: str, hind_interval: list) -> None:
             raise ValueError(msg)
 
 
-def run_forecast(valid_yaml, real_path):
+def run_forecast(valid_yaml, real_path, partition_file: str | None = None):
     """
     Run forecast workflow with optional cold start run
 
@@ -525,6 +584,9 @@ def run_forecast(valid_yaml, real_path):
         Path to input.config file for hindcast
     valid_yaml : str
         Path to validation yaml file from previous run of nwm-cal-mgr
+    partition_file : str | None (optional) path to partition configuration file.
+        If provided, the work will be divided among n processors where n in the number of partitions in this file.
+        TODO add multiprocessing support to run_hindcast and run_lagged_ensemble.
     """
     logger.info(f'Initializing forecast run from: {valid_yaml}')
 
@@ -532,7 +594,7 @@ def run_forecast(valid_yaml, real_path):
     config_cache = ConfigCache(valid_yaml)
 
     # Run forecast or cold start, depending on provided realization path
-    run_workflow(valid_yaml, real_path, config_cache)
+    run_workflow(valid_yaml, real_path, config_cache, partition_file=partition_file)
     logger.info("Ngen run completed")
 
 
