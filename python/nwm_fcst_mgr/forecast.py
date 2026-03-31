@@ -518,11 +518,18 @@ def read_troute_output(
             logger.critical(e)
             raise
 
-    # get catchment at basin outlet for reading from t-route output
-    catchment_hydro_fabric = gpd.read_file(gpkg_file, layer='divides')
-    catchment_hydro_fabric.set_index('id', inplace=True)
-    nexus_id = catchment_hydro_fabric.loc[x_walk.index[0].replace('cat', 'wb')]['toid']
-    wb_lst = [x.split('-')[1] for x in catchment_hydro_fabric.index[catchment_hydro_fabric['toid'] == nexus_id]]
+    # Get outlet div_id from crosswalk
+    outlet_div_id = int(x_walk.index[0])
+
+    # Read flowpaths layer to find downstream nexus for outlet catchment
+    flowpaths = gpd.read_file(gpkg_file, layer='flowpaths')
+    outlet_fp = flowpaths[flowpaths['div_id'] == outlet_div_id]
+    if outlet_fp.empty:
+        msg = f"div_id {outlet_div_id} not found in flowpaths layer"
+        logger.critical(msg)
+        raise ValueError(msg)
+    dn_nex_id = outlet_fp['dn_nex_id'].iloc[0]
+    wb_lst = flowpaths[flowpaths['dn_nex_id'] == dn_nex_id]['div_id'].astype(int).tolist()
 
     # read troute output
     ncvar = netCDF4.Dataset(out_file, "r")
