@@ -1,7 +1,8 @@
 # syntax=docker/dockerfile:1.4
+
 ARG ORG=ngwpc
 ARG NGEN_IMAGE_TAG=latest
-ARG NGEN_IMAGE=ghcr.io/ngwpc/ngen:${NGEN_IMAGE_TAG}
+ARG NGEN_IMAGE=ghcr.io/${ORG}/ngen:${NGEN_IMAGE_TAG}
 FROM ${NGEN_IMAGE}
 
 # Uncomment when building ngen locally or if ngen-int image is available locally
@@ -16,7 +17,6 @@ ARG IMAGE_SOURCE="unknown"
 ARG IMAGE_VENDOR="unknown"
 ARG IMAGE_VERSION="unknown"
 ARG IMAGE_REVISION="unknown"
-ARG IMAGE_CREATED="unknown"
 
 # OCI Standard Labels
 LABEL org.opencontainers.image.base.name="${NGEN_IMAGE}" \
@@ -26,7 +26,8 @@ LABEL org.opencontainers.image.base.name="${NGEN_IMAGE}" \
     org.opencontainers.image.vendor="${IMAGE_VENDOR}" \
     org.opencontainers.image.version="${IMAGE_VERSION}" \
     org.opencontainers.image.revision="${IMAGE_REVISION}" \
-    org.opencontainers.image.created="${IMAGE_CREATED}"
+    org.opencontainers.image.title="NGEN Forecast/Hindcast" \
+    org.opencontainers.image.description="Docker image for the NGEN Forecast/Hindcast application"
 
 # Activate the existing virtual environment
 ENV PATH="/ngen-app/ngen-python/bin:${PATH}"
