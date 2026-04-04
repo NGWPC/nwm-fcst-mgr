@@ -46,8 +46,9 @@ jobs:
       commit_sha_short: ${{ steps.vars.outputs.commit_sha_short }}
       test_image_tag: ${{ steps.vars.outputs.test_image_tag }}
       alias_tag: ${{ steps.vars.outputs.alias_tag }}
-      build_date: ${{ steps.vars.outputs.build_date }}
       clean_ref: ${{ steps.vars.outputs.clean_ref }}
+      ngen_image_digest: ${{ steps.vars.outputs.ngen_image_digest }}
+      ngen_image_revision: ${{ steps.vars.outputs.ngen_image_revision }}
     steps:
       - name: Compute image vars
         id: vars
@@ -62,9 +63,6 @@ jobs:
 
           # one datetime for all time variables
           NOW=$(date -u +'%Y-%m-%d %H:%M:%S')
-
-          # for OCI labels
-          BUILD_DATE=$(date -u -d "$NOW" +'%Y-%m-%dT%H:%M:%SZ')
 
           # for Docker image tags
           TIMESTAMP=$(date -u -d "$NOW" +'%Y%m%d%H%M%SZ')
@@ -100,15 +98,29 @@ jobs:
             ALIAS="${TIMESTAMP}-${CLEAN_REF}"
           fi
 
+          # skopeo is needed to inspect the base image
+          if ! command -v skopeo >/dev/null 2>&1; then
+            sudo apt-get update -y
+            sudo apt-get install -y --no-install-recommends skopeo
+          fi
+
+          # base image (ngen) metadata for Dockerfile labels
+          NGEN_IMAGE_TAG="${{ inputs.NGEN_IMAGE_TAG || 'latest' }}"
+          NGEN_IMAGE="ghcr.io/${ORG}/ngen:${NGEN_IMAGE_TAG}"
+          NGEN_INSPECT=$(skopeo inspect "docker://${NGEN_IMAGE}" 2>/dev/null || echo '{}')
+          NGEN_IMAGE_DIGEST=$(echo "$NGEN_INSPECT" | jq -r '.Digest // "unknown"')
+          NGEN_IMAGE_REVISION=$(echo "$NGEN_INSPECT" | jq -r '.Labels["org.opencontainers.image.revision"] // "unknown"')
+
           # save outputs
           echo "org=${ORG}" >> "$GITHUB_OUTPUT"
           echo "image_base=${IMAGE_BASE}" >> "$GITHUB_OUTPUT"
-          echo "build_date=${BUILD_DATE}" >> "$GITHUB_OUTPUT"
           echo "test_image_tag=${TEST_TAG}" >> "$GITHUB_OUTPUT"
           echo "alias_tag=${ALIAS}" >> "$GITHUB_OUTPUT"
           echo "commit_sha=${REAL_SHA}" >> "$GITHUB_OUTPUT"
           echo "commit_sha_short=${SHORT_SHA}" >> "$GITHUB_OUTPUT"
           echo "clean_ref=${CLEAN_REF}" >> "$GITHUB_OUTPUT"
+          echo "ngen_image_digest=${NGEN_IMAGE_DIGEST}" >> "$GITHUB_OUTPUT"
+          echo "ngen_image_revision=${NGEN_IMAGE_REVISION}" >> "$GITHUB_OUTPUT"
 
   # CodeQL scan
   codeql-scan:
@@ -167,11 +179,12 @@ jobs:
           build-args: |
             ORG=${{ needs.setup.outputs.org }}
             NGEN_IMAGE_TAG=${{ inputs.NGEN_IMAGE_TAG || 'latest' }}
+            BASE_IMAGE_DIGEST=${{ needs.setup.outputs.ngen_image_digest }}
+            BASE_IMAGE_REVISION=${{ needs.setup.outputs.ngen_image_revision }}
             IMAGE_SOURCE=https://github.com/${{ github.repository }}
             IMAGE_VENDOR=${{ github.repository_owner }}
             IMAGE_VERSION=${{ needs.setup.outputs.clean_ref }}
             IMAGE_REVISION=${{ needs.setup.outputs.commit_sha }}
-            IMAGE_CREATED=${{ needs.setup.outputs.build_date }}
             CI_COMMIT_REF_NAME=${{ needs.setup.outputs.clean_ref }}
 
 # run unit tests inside the built Docker image
