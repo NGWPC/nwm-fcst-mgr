@@ -69,7 +69,7 @@ class ConfigCache:
             self.valid_yaml = None
             self.valid_config = None
             self.gage0 = None
-            self.gpkg_cats, self.gpkg_nexus, self.ngen_exe, self.gage0 = extract_config_from_run_dir(run_dir)
+            self.gpkg_cats, self.gpkg_nexus, self.ngen_exe = extract_config_from_run_dir(run_dir)
 
 
 class RunStatus(Enum):
@@ -902,7 +902,7 @@ def run_lagged_ensemble(
             else:
                 # Copy no_da run folder and update forcing for each subsequent member
                 src_run_path = str(Path(no_da_real_path).parent)
-                dst_run_path = str(Path(no_da_real_path).parent.parent) / f"lagged_ens_{member}"
+                dst_run_path = str(Path(no_da_real_path).parent.parent / f"lagged_ens_{member}")
 
                 if closed_loop_state is not None:
                     lag_ens_kwargs['load_state_from'] = closed_loop_state
