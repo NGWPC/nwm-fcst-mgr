@@ -156,7 +156,7 @@ When using default/regionalization mode, the `no_da` member realization is built
 
 **Validation-based mode:**
 ```bash
-python -m nwm_fcst_mgr run_lagged_ens \
+python -m nwm_fcst_mgr run_lagged_ensemlble \
     /path/to/input.config \
     --valid_yaml /path/to/valid.yaml \
     --fcst_run_name my_lagged_ens_run \
@@ -166,7 +166,7 @@ python -m nwm_fcst_mgr run_lagged_ens \
 
 **Default/Regionalization-based mode:**
 ```bash
-python -m nwm_fcst_mgr run_lagged_ens \
+python -m nwm_fcst_mgr run_lagged_ensemble \
     /path/to/input.config \
     --from_valid False \
     --open_loop_state /path/to/open_loop_state/ \
@@ -177,9 +177,9 @@ python -m nwm_fcst_mgr run_lagged_ens \
 
 **Validation-based mode:**
 ```python
-from nwm_fcst_mgr.forecast import run_lagged_ens
+from nwm_fcst_mgr.forecast import run_lagged_ensemble
 
-run_lagged_ens(
+run_lagged_ensemble(
     valid_yaml='/path/to/valid.yaml',
     input_path='/path/to/input.config',
     fcst_run_name='my_lagged_ens_run',
@@ -190,9 +190,9 @@ run_lagged_ens(
 
 **Default/Regionalization-based mode:**
 ```python
-from nwm_fcst_mgr.forecast import run_lagged_ens
+from nwm_fcst_mgr.forecast import run_lagged_ensemble
 
-run_lagged_ens(
+run_lagged_ensemble(
     input_path='/path/to/input.config',
     from_valid=False,
     open_loop_state='/path/to/open_loop_state/',
