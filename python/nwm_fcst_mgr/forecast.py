@@ -1,7 +1,6 @@
 from enum import Enum, auto
 import glob
 import json
-import logging
 import os
 import shutil
 import signal
@@ -22,7 +21,7 @@ from nwm_fcst_mgr.consts import PARTITION_CONFIG_FILE_NAME_SUFFIX
 from nwm_fcst_mgr.exceptions import NgenCalledProcessError, NgenIntentionallyStoppedError
 from nwm_fcst_mgr.ngen_cli import NgenCLI
 from nwm_fcst_mgr.utils import initialize_logger, set_os_env_key, OS_ENV_KEY_RESULTS_DIR, OS_ENV_KEY_NGEN_LOG_FILE_PREFIX
-from mswm.manager import build_fcst
+from mswm.manager import build_fcst, build_region, build_default, update_fcst_run
 
 # Set valid cycle hours for each forecast configuration
 VALID_CYCLE_HOURS = {
@@ -37,19 +36,37 @@ VALID_CYCLE_HOURS = {
 # setup the logger
 logger = initialize_logger()
 
+
 class ConfigCache:
     """
     Cache for validation config and extracted values that are shared across multiple forecast runs
+    Supports two modes:
+        from_valid=True: loads config from a valid_yaml file (validation-based workflow)
+        from_valid=False: loads gpkg and ngen_exe paths directly from run_dir (default/regionalization)
     """
-    def __init__(self, valid_yaml: str):
-        self.valid_yaml = valid_yaml
-        self.valid_config = load_yaml(valid_yaml)
-        logger.info(f"Validation file loaded from: {valid_yaml}")
+    def __init__(self, valid_yaml: str = None, run_dir: str = None, from_valid: bool = True):
+        self.from_valid = from_valid
 
-        # Extract and validate config values once
-        self.gpkg_cats, self.gpkg_nexus, self.ngen_exe, self.gage0 = extract_config(
-            self.valid_config, self.valid_yaml
-        )
+        if from_valid:
+            if valid_yaml is None:
+                msg = "valid_yaml must be provided when from_valid=True"
+                logger.critical(msg)
+                raise ValueError(msg)
+            self.valid_yaml = valid_yaml
+            self.valid_config = load_yaml(valid_yaml)
+            logger.info(f"Validation file loaded from: {valid_yaml}")
+            self.gpkg_cats, self.gpkg_nexus, self.ngen_exe, self.gage0 = extract_config(
+                self.valid_config, self.valid_yaml
+            )
+        else:
+            if run_dir is None:
+                msg = "valid_yaml must be provided when from_valid=True"
+                logger.critical(msg)
+                raise ValueError(msg)
+            self.valid_yaml = None
+            self.valid_config = None
+            self.gage0 = None
+            self.gpkg_cats, self.gpkg_nexus, self.ngen_exe, self.gage0 = extract_config_from_run_dir(run_dir)
 
 
 class RunStatus(Enum):
@@ -74,14 +91,12 @@ class ForecastExecutionManager:
 
     def __init__(
         self,
-        valid_yaml: str,
         real_path: str,
         config_cache: ConfigCache = None,
         partition_file: str | None = None,
     ):
         self._status = RunStatus.NOSTATUS
 
-        self.valid_yaml = valid_yaml
         self.real_path = real_path
         self.config_cache = config_cache
         self.partition_file = partition_file
@@ -361,7 +376,6 @@ def search_for_partition_config(realization_file: str) -> str:
 
 
 def run_workflow(
-    valid_yaml: str,
     real_path: str,
     config_cache: ConfigCache,
     suppress_output: bool = False,
@@ -369,7 +383,6 @@ def run_workflow(
 ):
     """
     Execute ngen run workflow for forecast period and cold start period (if provided)
-    valid_yaml: path to validation yaml file from past calibration run
     real_path: path to realization file for a cold start or forecast period
     config_cache: ConfigCache containing pre-loaded config and extracted values
     suppress_output: suppress postprocess output of plot and csv of streamflow
@@ -377,7 +390,6 @@ def run_workflow(
         If provided, the work will be divided among n processors where n in the number of partitions in this file.
     """
     with ForecastExecutionManager(
-        valid_yaml,
         real_path,
         config_cache,
         partition_file,
@@ -448,7 +460,9 @@ def load_yaml(file_path: str) -> dict:
 
 
 def extract_config(valid_config: dict, valid_yaml: str) -> tuple:
-    """ Extract and validate static config values from loaded config file"""
+    """
+    Extract and validate static config values from loaded config file
+    """
     # Retrieve hydrofabric gpkg
     gpkg_cats = valid_config["model"]["catchments"]
     gpkg_nexus = valid_config["model"]["nexus"]
@@ -470,6 +484,89 @@ def extract_config(valid_config: dict, valid_yaml: str) -> tuple:
             raise
 
     return gpkg_cats, gpkg_nexus, ngen_exe, gage0
+
+
+def extract_config_from_run_dir(run_dir: str) -> tuple:
+    """
+    Extract gpkg and ngen executable paths from an existing default or regionalization run directory
+
+    Parameters
+    ----------
+    run_dir: str
+        Path to the existing run directory
+
+    Returns
+    ---------
+    gpkg_cats, gpkg_nexus, ngen_exe
+    """
+    input_dir = Path(run_dir) / "Input"
+
+    # Find gpkg file
+    gpkg_files = list(input_dir.glob("*.gpkg"))
+    if not gpkg_files:
+        msg = f"Geopackage file not found in run directory: {input_dir}"
+        logger.critical(msg)
+        raise FileNotFoundError(msg)
+    gpkg = str(gpkg_files[0])
+
+    # Find ngen executable
+    ngen_exe = str(input_dir / "ngen")
+    if not Path(ngen_exe).exists():
+        msg = f"ngen executable not found in run directory: {input_dir}"
+        logger.critical(msg)
+        raise FileNotFoundError(msg)
+
+    return gpkg, gpkg, ngen_exe
+
+
+def _get_run_type_from_config(input_path: str) -> str:
+    """
+    Read run_type from the [General] section of an input.config file
+
+    Parameters
+    ----------
+    input_path: str
+        Path to input.config file
+
+    Returns
+    ---------
+    run_type string
+    """
+    config = load_config(input_path)
+    try:
+        run_type = config["General"]["run_type"]
+    except KeyError as e:
+        msg = f"run_type not found in [General] section of input.config: {e}"
+        logger.critical(msg)
+        raise KeyError(msg)
+    return run_type
+
+
+def _build_realization(input_path: str, run_type: str, **kwargs) -> str:
+    """
+    Call build_region or build_default based on run type
+
+    Parameters
+    ----------
+    input_path: str
+        Path to input.config file
+    run_type: str
+        Run type from input.config ('regionalization' or 'default')
+    **kwargs
+        Additional arguments passed to build_region or build_default
+
+    Returns
+    ---------
+    run_type string
+    """
+    if run_type == 'regionalization':
+        return build_region(input_path, **kwargs)
+    elif run_type == 'default':
+        return build_default(input_path, **kwargs)
+    else:
+        msg = f"Unupported run_type for from_valid=False workflow: {run_type}. Must be 'regionalization' or 'default'."
+        logger.critical(msg)
+        raise ValueError(msg)
 
 
 def read_troute_output(
@@ -584,27 +681,41 @@ def check_hind_intervals(input_path: str, hind_interval: list) -> None:
             raise ValueError(msg)
 
 
-def run_forecast(valid_yaml, real_path, partition_file: str | None = None):
+def run_forecast(
+    real_path: str,
+    valid_yaml: str = None,
+    from_valid: bool = True,
+    partition_file: str | None = None
+):
     """
     Run forecast workflow with optional cold start run
 
     Parameters
     ---------
-    input_path : str
-        Path to input.config file for hindcast
+    real_path : str
+        Path to realization file for forecast
     valid_yaml : str
         Path to validation yaml file from previous run of nwm-cal-mgr
+    from_valid : bool
+        Boolean flag to create forecast from validation run
     partition_file : str | None (optional) path to partition configuration file.
         If provided, the work will be divided among n processors where n in the number of partitions in this file.
         TODO add multiprocessing support to run_hindcast and run_lagged_ensemble.
     """
-    logger.info(f'Initializing forecast run from: {valid_yaml}')
+    logger.info(f'Initializing forecast run (from_valid={from_valid})')
 
-    # Load config and extract once per workflow
-    config_cache = ConfigCache(valid_yaml)
+    if from_valid:
+        if valid_yaml is None:
+            msg = "valid_yaml must be provided when from_valid=True"
+            logger.critical(msg)
+            raise ValueError(msg)
+        config_cache = ConfigCache(valid_yaml=valid_yaml, from_valid=True)
+    else:
+        run_dir = str(Path(real_path).parent)
+        config_cache = ConfigCache(run_dir=run_dir, from_valid=False)
 
     # Run forecast or cold start, depending on provided realization path
-    run_workflow(valid_yaml, real_path, config_cache, partition_file=partition_file)
+    run_workflow(real_path, config_cache, supress_output=not from_valid, partition_file=partition_file)
     logger.info("Ngen run completed")
 
 
@@ -633,7 +744,7 @@ def run_hindcast(input_path, valid_yaml, fcst_run_name, cycle_interval, num_iter
     logger.info(f'Initializing hindcast runs from: {valid_yaml}')
 
     # Load config and extract once per workflow
-    config_cache = ConfigCache(valid_yaml)
+    config_cache = ConfigCache(valid_yaml, from_valid=True)
 
     # Generate hindcast interval times in hours
     hind_interval = list(range(0, num_iterations * cycle_interval, cycle_interval))
@@ -704,7 +815,7 @@ def run_hindcast(input_path, valid_yaml, fcst_run_name, cycle_interval, num_iter
         prev_hind_cycle = hind_cycle
 
 
-def run_lagged_ensemble(input_path, valid_yaml, fcst_run_name, open_loop_state=None, closed_loop_state=None):
+def run_lagged_ensemble(input_path, valid_yaml, fcst_run_name, from_valid: bool = True, open_loop_state=None, closed_loop_state=None):
     """
     Run lagged ensemble workflow, loading from open and closed loop AnA states
 
@@ -716,15 +827,22 @@ def run_lagged_ensemble(input_path, valid_yaml, fcst_run_name, open_loop_state=N
         Path to validation yaml file from previous run of nwm-cal-mgr
     fcst_run_name : str
         Name of the folder to be created for storing inputs/outputs for hindcast
+    from_valid : bool
+        If True, use validation-based workflow. If False, use default/regionalization workflow.
     open_loop_state : str, optional
         Path to directory containing open loop AnA state files to initialize no DA member
     closed_loop_state : str, optional
         Path to directory containing closed loop AnA state files to initialize all other members
     """
-    logger.info(f'Initializing lagged ensemble runs from: {valid_yaml}')
+    logger.info(f'Initializing lagged ensemble runs from_valid={from_valid}')
 
-    # Load config and extract once per workflow
-    config_cache = ConfigCache(valid_yaml)
+    if from_valid:
+        if valid_yaml is None or fcst_run_name is None:
+            msg = "valid_yaml and fcst_run_name must be provided when from_valid=True"
+            logger.critical(msg)
+            raise ValueError(msg)
+    else:
+        run_type = _get_run_type_from_config(input_path)
 
     # Set list of medium range lagged ensemble runs and hours of forcing lag
     ens_members = {
@@ -737,39 +855,86 @@ def run_lagged_ensemble(input_path, valid_yaml, fcst_run_name, open_loop_state=N
         'mem6': 30
     }
 
+    # For from_valid=True, config_cache is the same for all members
+    if from_valid:
+        config_cache = ConfigCache(valid_yaml=valid_yaml, from_valid=True)
+
     # Loop through lagged ensemble members
     for member, lag in ens_members.items():
 
-        logger.info(f"Initializing lagged ensemble run for medium range {member}")
+        logger.info(f"Setting up lagged ensemble run for medium range {member}")
 
-        # Set lagged ensemble kwargs
-        lag_ens_kwargs = {
-            'input_path': input_path,
-            'valid_yaml': valid_yaml,
-            'fcst_run_name': fcst_run_name,
-            'use_lagged_ens': True,
-            'lagged_ens_mem': member,
-            'forcing_lag': lag
-        }
+        # Build realization via msw-mgr
+        if from_valid:
+            lag_ens_kwargs = {
+                'input_path': input_path,
+                'valid_yaml': valid_yaml,
+                'fcst_run_name': fcst_run_name,
+                'use_lagged_ens': True,
+                'lagged_ens_mem': member,
+                'forcing_lag': lag
+            }
 
-        logger.info(f"Initializing lagged ensemble run for {member} member")
+            # Load open loop AnA run state for no_da member, load closed loop AnA run state for all other members
+            if member == "no_da":
+                if open_loop_state is not None:
+                    lag_ens_kwargs['load_state_from'] = open_loop_state
+                    logger.info(f"Lagged ensember {member} member initialized with open loop state: {open_loop_state}")
+            else:
+                if closed_loop_state is not None:
+                    lag_ens_kwargs['load_state_from'] = closed_loop_state
+                    logger.info(f"Lagged ensember {member} member initialized with closed loop state: {closed_loop_state}")
 
-        # Load open loop AnA run state for no_da member, load closed loop AnA run state for all other members
-        if member == "no_da":
-            if open_loop_state is not None:
-                lag_ens_kwargs['load_state_from'] = open_loop_state
-                logger.info(f"Lagged ensember {member} member initialized with open loop state: {open_loop_state}")
+            # Create lagged ensemble member input files
+            member_real_path = build_fcst(**lag_ens_kwargs)
+
         else:
-            if closed_loop_state is not None:
-                lag_ens_kwargs['load_state_from'] = closed_loop_state
-                logger.info(f"Lagged ensember {member} member initialized with closed loop state: {closed_loop_state}")
+            lag_ens_kwargs = {
+                'use_lagged_ens': True,
+                'lagged_ens_mem': member,
+                'forcing_lag': lag
+            }
 
-        # Create lagged ensemble member input files
-        member_real_path = build_fcst(**lag_ens_kwargs)
+            # Load open loop AnA run state for no_da member, load closed loop AnA run state for all other members
+            if member == "no_da":
+                # Build no_da member realization from scratch
+                if open_loop_state is not None:
+                    lag_ens_kwargs['load_state_from'] = open_loop_state
+                    logger.info(f"Lagged ensember {member} member initialized with open loop state: {open_loop_state}")
+
+                member_real_path = _build_realization(
+                    input_path=input_path,
+                    run_type=run_type,
+                    **lag_ens_kwargs
+                )
+                no_da_real_path = member_real_path
+            else:
+                # Copy no_da run folder and update forcing for each subsequent member
+                src_run_path = str(Path(no_da_real_path).parent)
+                dst_run_path = str(Path(no_da_real_path).parent.parent) / f"lagged_ens_{member}"
+
+                if closed_loop_state is not None:
+                    lag_ens_kwargs['load_state_from'] = closed_loop_state
+                    logger.info(f"Lagged ensember {member} member initialized with closed loop state: {closed_loop_state}")
+
+                member_real_path = update_fcst_run(
+                    input_path=input_path,
+                    src_run_path=src_run_path,
+                    dst_run_path=dst_run_path,
+                    **lag_ens_kwargs
+                )
+
         logger.info(f"Lagged ensemble {member} member realization file written to: {member_real_path}")
 
+        # For from_valid=False, derive run_dir from each member's realization path
+        if not from_valid:
+            config_cache = ConfigCache(
+                run_dir=str(Path(member_real_path).parent),
+                from_valid=False
+            )
+
         # Run hindcasting period
-        run_workflow(valid_yaml, member_real_path, config_cache)
+        run_workflow(member_real_path, config_cache, supress_output=not from_valid)
         logger.info(f"Lagged ensemble {member} member run completed")
 
 
@@ -781,11 +946,12 @@ def parse_args():
 
     # Define parent parser for shared arguments
     parent_parser = argparse.ArgumentParser(add_help=False)
-    parent_parser.add_argument('valid_yaml', type=str, help='Path to validation yaml file from previous run of nwm-cal-mgr')
+    parent_parser.add_argument('real_path', type=str, help='Path to cold start or forecast period realization file')
+    parent_parser.add_argument('--from_valid', action='store_true', default=True, help='use validation-based workflow (default=True)')
 
     # Subcommand: forecast_workflow
     forecast_workflow_sub = subparser.add_parser("run_forecast", parents=[parent_parser], help="Run forecast workflow")
-    forecast_workflow_sub.add_argument('real_path', type=str, help='Path to cold start or forecast period realization file')
+    forecast_workflow_sub.add_argument('--valid_yaml', type=str, default=None, help='Path to validation yaml file from previous run of nwm-cal-mgr')
 
     # Subcommand: hindcast_workflow
     hindcast_workflow_sub = subparser.add_parser("run_hindcast", parents=[parent_parser], help="Run hindcast workflow")
@@ -798,7 +964,8 @@ def parse_args():
     # Subcommand: lagged_ensembles_workflow
     lagged_ens_workflow_sub = subparser.add_parser("run_lagged_ens", parents=[parent_parser], help="Run lagged ensembles workflow")
     lagged_ens_workflow_sub.add_argument('input_path', type=str, help='Path to input.config file for forecast')
-    lagged_ens_workflow_sub.add_argument("fcst_run_name", help="Name of the folder to be created for storing inputs/outputs from running ngen")
+    lagged_ens_workflow_sub.add_argument('--valid_yaml', type=str, default=None, help='Path to validation yaml file from previous run of nwm-cal-mgr')
+    lagged_ens_workflow_sub.add_argument("--fcst_run_name", help="Name of the folder to be created for storing inputs/outputs from running ngen")
     lagged_ens_workflow_sub.add_argument("--open_loop_state", type=str, default=None, help="Path to directory containing open loop ana state files")
     lagged_ens_workflow_sub.add_argument("--closed_loop_state", type=str, default=None, help="Path to directory containing closed loop ana state files")
 
@@ -812,15 +979,15 @@ def main():
 
     # Run fcst/hindcast workflows
     if args.command == "run_forecast":
-        run_forecast(valid_yaml=args.valid_yaml, real_path=args.real_path)
+        run_forecast(real_path=args.real_path, valid_yaml=args.valid_yaml, from_valid=args.from_valid)
     elif args.command == "run_hindcast":
         run_hindcast(valid_yaml=args.valid_yaml, input_path=args.input_path,
                      fcst_run_name=args.fcst_run_name, cycle_interval=args.cycle_interval,
                      num_iterations=args.num_iterations, cold_start_state=args.cold_start_state)
     elif args.command == "run_lagged_ens":
         run_lagged_ensemble(valid_yaml=args.valid_yaml, input_path=args.input_path,
-                            fcst_run_name=args.fcst_run_name, open_loop_state=args.open_loop_state,
-                            closed_loop_state=args.closed_loop_state)
+                            fcst_run_name=args.fcst_run_name, from_valid=args.from_valid,
+                            open_loop_state=args.open_loop_state, closed_loop_state=args.closed_loop_state)
     else:
         raise ValueError(f"Unexpected command: {args.command}. Use either 'run_forecast', 'run_hindcast', or 'run_lagged_ens'.")
 
