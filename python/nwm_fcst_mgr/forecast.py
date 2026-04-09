@@ -815,7 +815,14 @@ def run_hindcast(input_path, valid_yaml, fcst_run_name, cycle_interval, num_iter
         prev_hind_cycle = hind_cycle
 
 
-def run_lagged_ensemble(input_path, valid_yaml, fcst_run_name, from_valid: bool = True, open_loop_state=None, closed_loop_state=None):
+def run_lagged_ensemble(
+        input_path,
+        valid_yaml: str = None,
+        fcst_run_name: str = None,
+        from_valid: bool = True,
+        open_loop_state=None,
+        closed_loop_state=None
+):
     """
     Run lagged ensemble workflow, loading from open and closed loop AnA states
 
@@ -933,7 +940,7 @@ def run_lagged_ensemble(input_path, valid_yaml, fcst_run_name, from_valid: bool 
                 from_valid=False
             )
 
-        # Run hindcasting period
+        # Run lagged ensemble period
         run_workflow(member_real_path, config_cache, supress_output=not from_valid)
         logger.info(f"Lagged ensemble {member} member run completed")
 
@@ -984,12 +991,12 @@ def main():
         run_hindcast(valid_yaml=args.valid_yaml, input_path=args.input_path,
                      fcst_run_name=args.fcst_run_name, cycle_interval=args.cycle_interval,
                      num_iterations=args.num_iterations, cold_start_state=args.cold_start_state)
-    elif args.command == "run_lagged_ens":
+    elif args.command == "run_lagged_ensemble":
         run_lagged_ensemble(valid_yaml=args.valid_yaml, input_path=args.input_path,
                             fcst_run_name=args.fcst_run_name, from_valid=args.from_valid,
                             open_loop_state=args.open_loop_state, closed_loop_state=args.closed_loop_state)
     else:
-        raise ValueError(f"Unexpected command: {args.command}. Use either 'run_forecast', 'run_hindcast', or 'run_lagged_ens'.")
+        raise ValueError(f"Unexpected command: {args.command}. Use either 'run_forecast', 'run_hindcast', or 'run_lagged_ensemble'.")
 
 
 if __name__ == "__main__":
