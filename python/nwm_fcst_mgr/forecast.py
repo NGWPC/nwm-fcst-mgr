@@ -969,7 +969,7 @@ def parse_args():
     hindcast_workflow_sub.add_argument("--cold_start_state", type=str, default=None, help="Path to directory containing cold start state files")
 
     # Subcommand: lagged_ensembles_workflow
-    lagged_ens_workflow_sub = subparser.add_parser("run_lagged_ens", parents=[parent_parser], help="Run lagged ensembles workflow")
+    lagged_ens_workflow_sub = subparser.add_parser("run_lagged_ensemble", parents=[parent_parser], help="Run lagged ensembles workflow")
     lagged_ens_workflow_sub.add_argument('input_path', type=str, help='Path to input.config file for forecast')
     lagged_ens_workflow_sub.add_argument('--valid_yaml', type=str, default=None, help='Path to validation yaml file from previous run of nwm-cal-mgr')
     lagged_ens_workflow_sub.add_argument("--fcst_run_name", help="Name of the folder to be created for storing inputs/outputs from running ngen")
