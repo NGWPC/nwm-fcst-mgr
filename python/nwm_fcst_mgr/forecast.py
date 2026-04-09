@@ -24,6 +24,11 @@ from nwm_fcst_mgr.exceptions import NgenCalledProcessError, NgenIntentionallySto
 from nwm_fcst_mgr.ngen_cli import NgenCLI
 from nwm_fcst_mgr.utils import set_os_env_key, OS_ENV_KEY_RESULTS_DIR
 from mswm.manager import build_fcst
+from mswm.utils.input_configuration import InputConfig
+
+
+LAGGED_ENSEMBLE_MEMBER_0 = "no_da"
+
 
 # Set valid cycle hours for each forecast configuration
 VALID_CYCLE_HOURS = {
@@ -689,14 +694,22 @@ def run_hindcast(input_path, valid_yaml, fcst_run_name, cycle_interval, num_iter
         prev_hind_cycle = hind_cycle
 
 
-def run_lagged_ensemble(input_path, valid_yaml, fcst_run_name, open_loop_state=None, closed_loop_state=None):
+def run_lagged_ensemble(
+    input_path: str | None,
+    valid_yaml: str,
+    fcst_run_name: str,
+    open_loop_state: str | None = None,
+    closed_loop_state: str | None = None,
+    partition_file: str | None = None,
+    config_overrides: InputConfig = None,
+):
     """
     Run lagged ensemble workflow, loading from open and closed loop AnA states
 
     Parameters
     ---------
-    input_path : str
-        Path to input.config file for hindcast
+    input_path : str | None
+        Path to input.config file for hindcast. If None, then input_config_obj must be provided.
     valid_yaml : str
         Path to validation yaml file from previous run of nwm-cal-mgr
     fcst_run_name : str
@@ -705,6 +718,8 @@ def run_lagged_ensemble(input_path, valid_yaml, fcst_run_name, open_loop_state=N
         Path to directory containing open loop AnA state files to initialize no DA member
     closed_loop_state : str, optional
         Path to directory containing closed loop AnA state files to initialize all other members
+    config_overrides : InputConfig, optional
+        Instance of MSWM InputConfig class. If provided, then input_path should be None.
     """
     logger.info(f'Initializing lagged ensemble runs from: {valid_yaml}')
 
@@ -713,7 +728,7 @@ def run_lagged_ensemble(input_path, valid_yaml, fcst_run_name, open_loop_state=N
 
     # Set list of medium range lagged ensemble runs and hours of forcing lag
     ens_members = {
-        'no_da': 0,
+        LAGGED_ENSEMBLE_MEMBER_0: 0,
         'mem1': 0,
         'mem2': 6,
         'mem3': 12,
@@ -734,7 +749,8 @@ def run_lagged_ensemble(input_path, valid_yaml, fcst_run_name, open_loop_state=N
             'fcst_run_name': fcst_run_name,
             'use_lagged_ens': True,
             'lagged_ens_mem': member,
-            'forcing_lag': lag
+            'forcing_lag': lag,
+            'config_overrides': config_overrides,
         }
 
         logger.info(f"Initializing lagged ensemble run for {member} member")
@@ -754,8 +770,29 @@ def run_lagged_ensemble(input_path, valid_yaml, fcst_run_name, open_loop_state=N
         logger.info(f"Lagged ensemble {member} member realization file written to: {member_real_path}")
 
         # Run hindcasting period
-        run_workflow(valid_yaml, member_real_path, config_cache)
-        logger.info(f"Lagged ensemble {member} member run completed")
+        run_workflow(valid_yaml, member_real_path, config_cache, partition_file=partition_file)
+
+
+def wait_for_duration(fcst_exe_mgr: ForecastExecutionManager, wait_sec: float) -> bool:
+    """Asynchronous loop while ngen in running. Wait up to wait_duration_sec seconds before returning."""
+    start = time.perf_counter()
+    poll_freq_seconds = 2
+    logger.info(
+        f"Polling ngen process every {poll_freq_seconds} seconds up to {wait_sec} sec total duration..."
+    )
+    while True:
+        fcst_exe_mgr.poll_ngen_flush_log()
+        elapsed_sec = time.perf_counter() - start
+        if elapsed_sec > wait_sec:
+            logger.info(f"ngen time limit of {wait_sec} seconds exceeded.")
+            finished_on_time = False
+            break
+        if fcst_exe_mgr._status == RunStatus.EXECUTION_SUCCESS:
+            logger.info(f"ngen finished running after {elapsed_sec:.1f} seconds.")
+            finished_on_time = True
+            break
+        time.sleep(poll_freq_seconds)
+    return finished_on_time
 
 
 def parse_args():
