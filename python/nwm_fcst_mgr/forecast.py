@@ -711,11 +711,15 @@ def run_forecast(
             raise ValueError(msg)
         config_cache = ConfigCache(valid_yaml=valid_yaml, from_valid=True)
     else:
+        if not Path(real_path).is_file():
+            msg = f"Realization file does not exist: {real_path}"
+            logger.critical(msg)
+            raise FileNotFoundError(msg)
         run_dir = str(Path(real_path).parent)
         config_cache = ConfigCache(run_dir=run_dir, from_valid=False)
 
     # Run forecast or cold start, depending on provided realization path
-    run_workflow(real_path, config_cache, supress_output=not from_valid, partition_file=partition_file)
+    run_workflow(real_path, config_cache, suppress_output=not from_valid, partition_file=partition_file)
     logger.info("Ngen run completed")
 
 
@@ -743,8 +747,13 @@ def run_hindcast(input_path, valid_yaml, fcst_run_name, cycle_interval, num_iter
     """
     logger.info(f'Initializing hindcast runs from: {valid_yaml}')
 
+    if valid_yaml is None:
+        msg = "valid_yaml must be provided for hindcast run"
+        logger.critical(msg)
+        raise ValueError(msg)
+
     # Load config and extract once per workflow
-    config_cache = ConfigCache(valid_yaml, from_valid=True)
+    config_cache = ConfigCache(valid_yaml=valid_yaml, from_valid=True)
 
     # Generate hindcast interval times in hours
     hind_interval = list(range(0, num_iterations * cycle_interval, cycle_interval))
@@ -776,7 +785,7 @@ def run_hindcast(input_path, valid_yaml, fcst_run_name, cycle_interval, num_iter
             logger.info(f"Warm start realization file for hindcast iteration at {hind_cycle} hours written to: {warm_start_real_path}")
 
             # Execute warm start ngen run to generate hindcasting model states
-            run_workflow(valid_yaml, warm_start_real_path, config_cache, suppress_output=True)
+            run_workflow(warm_start_real_path, config_cache, suppress_output=True)
             logger.info(f"Warm start run for hindcast iteration at {hind_cycle} hours completed")
             logger.info(f"Warm start state saved to {warm_start_state}")
 
@@ -808,7 +817,7 @@ def run_hindcast(input_path, valid_yaml, fcst_run_name, cycle_interval, num_iter
         logger.info(f"Hindcast realization file for iteration at {hind_cycle} hours written to: {hind_real_path}")
 
         # Run hindcasting period
-        run_workflow(valid_yaml, hind_real_path, config_cache)
+        run_workflow(hind_real_path, config_cache)
         logger.info(f"Hindcast run for iteration at {hind_cycle} hours completed")
 
         # Store previous hindcast cycle value to set next warm start duration
@@ -830,9 +839,9 @@ def run_lagged_ensemble(
     ---------
     input_path : str
         Path to input.config file for hindcast
-    valid_yaml : str
+    valid_yaml : str, optional
         Path to validation yaml file from previous run of nwm-cal-mgr
-    fcst_run_name : str
+    fcst_run_name : str, optional
         Name of the folder to be created for storing inputs/outputs for hindcast
     from_valid : bool
         If True, use validation-based workflow. If False, use default/regionalization workflow.
@@ -941,7 +950,7 @@ def run_lagged_ensemble(
             )
 
         # Run lagged ensemble period
-        run_workflow(member_real_path, config_cache, supress_output=not from_valid)
+        run_workflow(member_real_path, config_cache, suppress_output=not from_valid)
         logger.info(f"Lagged ensemble {member} member run completed")
 
 
@@ -953,12 +962,12 @@ def parse_args():
 
     # Define parent parser for shared arguments
     parent_parser = argparse.ArgumentParser(add_help=False)
-    parent_parser.add_argument('real_path', type=str, help='Path to cold start or forecast period realization file')
-    parent_parser.add_argument('--from_valid', action='store_true', default=True, help='use validation-based workflow (default=True)')
+    parent_parser.add_argument('--from_valid', action=argparse.BooleanOptionalAction, default=True, help='use validation-based workflow (default=True)')
+    parent_parser.add_argument('--valid_yaml', type=str, default=None, help='Path to validation yaml file from previous run of nwm-cal-mgr')
 
     # Subcommand: forecast_workflow
     forecast_workflow_sub = subparser.add_parser("run_forecast", parents=[parent_parser], help="Run forecast workflow")
-    forecast_workflow_sub.add_argument('--valid_yaml', type=str, default=None, help='Path to validation yaml file from previous run of nwm-cal-mgr')
+    forecast_workflow_sub.add_argument('real_path', type=str, help='Path to cold start or forecast period realization file')
 
     # Subcommand: hindcast_workflow
     hindcast_workflow_sub = subparser.add_parser("run_hindcast", parents=[parent_parser], help="Run hindcast workflow")
@@ -971,7 +980,6 @@ def parse_args():
     # Subcommand: lagged_ensembles_workflow
     lagged_ens_workflow_sub = subparser.add_parser("run_lagged_ensemble", parents=[parent_parser], help="Run lagged ensembles workflow")
     lagged_ens_workflow_sub.add_argument('input_path', type=str, help='Path to input.config file for forecast')
-    lagged_ens_workflow_sub.add_argument('--valid_yaml', type=str, default=None, help='Path to validation yaml file from previous run of nwm-cal-mgr')
     lagged_ens_workflow_sub.add_argument("--fcst_run_name", help="Name of the folder to be created for storing inputs/outputs from running ngen")
     lagged_ens_workflow_sub.add_argument("--open_loop_state", type=str, default=None, help="Path to directory containing open loop ana state files")
     lagged_ens_workflow_sub.add_argument("--closed_loop_state", type=str, default=None, help="Path to directory containing closed loop ana state files")
