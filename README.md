@@ -43,8 +43,8 @@ where `[NWM-FCST-MGR_ROOT]` is where nwm-fcst-mgr is installed.
 ## Usage
 nwm-fcst-mgr supports three workflows: **forecast**, **hindcast**, and **lagged ensemble** runs. Each workflow support two modes controlled by the `--from_valid` flag:
 
-- **Validation-based mode** (`--from_valid = True`, default) - Uses a validation yaml file from a previous nwm-cal-mgr calibration/validation run.
-- **Default/Regionaliztion-based mode** (`--from_valid = False`) - Runs a forecast using the msw-mgr default or regionalization run types. gpkg and ngen paths are derived from the run directory.
+- **Validation-based mode** (`from_valid = True`, default) - Uses a validation yaml file from a previous nwm-cal-mgr calibration/validation run.
+- **Default/Regionaliztion-based mode** (`from_valid = False`) - Runs a forecast using the msw-mgr default or regionalization run types. gpkg and ngen paths are derived from the run directory.
 
 Note: the hindcast workflow only supports the validation-based mode (from_valid = True)
 
@@ -68,7 +68,7 @@ python -m nwm_fcst_mgr run_forecast \
 ```bash
 python -m nwm_fcst_mgr run_forecast \
     /path/to/realization.json \
-    --from_valid False
+    --no-from_valid
 ```
 
 #### Python
@@ -110,11 +110,11 @@ Only supported with validation-based mode (from_valid = True)
 
 ```bash
 python -m nwm_fcst_mgr run_hindcast \
-    /path/to/valid.yaml \
     /path/to/input.config \
     my_hindcast_run \
     3 \
     10 \
+    --valid_yaml /path/to/valid.yaml
     --cold_start_state '/path/to/cold_start_state/' \
 ```
 
@@ -168,7 +168,7 @@ python -m nwm_fcst_mgr run_lagged_ensemlble \
 ```bash
 python -m nwm_fcst_mgr run_lagged_ensemble \
     /path/to/input.config \
-    --from_valid False \
+    --no-from_valid \
     --open_loop_state /path/to/open_loop_state/ \
     --closed_loop_state /path/to/closed_loop_state/ \
 ```
