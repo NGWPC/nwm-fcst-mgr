@@ -386,6 +386,10 @@ def run_workflow(
     ) as fem:
         fem.preprocess()
         fem.execute(wait=True)
+        ### NOTE this commented-out block can be used for trying the lagged ens setup without running it to completion
+        # finished_on_time = wait_for_duration(fem, 30)
+        # if finished_on_time:
+        #     fem.postprocess(suppress_output)
         fem.postprocess(suppress_output)
 
 
@@ -770,11 +774,17 @@ def run_lagged_ensemble(
         logger.info(f"Lagged ensemble {member} member realization file written to: {member_real_path}")
 
         # Run hindcasting period
-        run_workflow(valid_yaml, member_real_path, config_cache, partition_file=partition_file)
+        try:
+            run_workflow(valid_yaml, member_real_path, config_cache, partition_file=partition_file)
+        except NgenIntentionallyStoppedError as e:
+            msg = f"Ngen stopped early: {e}"
+            logging.critical(msg)
+            raise RuntimeError(msg) from e
 
 
 def wait_for_duration(fcst_exe_mgr: ForecastExecutionManager, wait_sec: float) -> bool:
-    """Asynchronous loop while ngen in running. Wait up to wait_duration_sec seconds before returning."""
+    """Asynchronous loop while ngen is running. Wait up to wait_sec seconds before returning.
+    Returns a boolean which indicates whether ngen finished on time or not."""
     start = time.perf_counter()
     poll_freq_seconds = 2
     logger.info(
