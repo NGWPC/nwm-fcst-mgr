@@ -19,10 +19,10 @@ import yaml
 import argparse
 
 from nwm_fcst_mgr.consts import PARTITION_CONFIG_FILE_NAME_SUFFIX
-from nwm_fcst_mgr.log_level import log_level_set
+from nwm_fcst_mgr.log_level import initialize_logger
 from nwm_fcst_mgr.exceptions import NgenCalledProcessError, NgenIntentionallyStoppedError
 from nwm_fcst_mgr.ngen_cli import NgenCLI
-from nwm_fcst_mgr.utils import set_os_env_key, OS_ENV_KEY_RESULTS_DIR
+from nwm_fcst_mgr.utils import set_os_env_key, OS_ENV_KEY_RESULTS_DIR, OS_ENV_KEY_NGEN_LOG_FILE_PREFIX
 from mswm.manager import build_fcst
 
 # Set valid cycle hours for each forecast configuration
@@ -36,9 +36,7 @@ VALID_CYCLE_HOURS = {
 }
 
 # setup the logger
-logger = logging.getLogger(__name__)
-log_level_set()
-
+logger = initialize_logger()
 
 class ConfigCache:
     """
@@ -235,14 +233,20 @@ class ForecastExecutionManager:
         self.ngen_exe = self.config_cache.ngen_exe
         self.gage0 = self.config_cache.gage0
 
-        # set environment variable for ngencerf backend
-        set_os_env_key(
-            OS_ENV_KEY_RESULTS_DIR, str(Path(self.real_path).parent), override=False
-        )
-
         # Retrieve output_dir
         real_file = Path(self.real_path)
         self.out_dir = real_file.parent
+
+        global logger
+        logger = initialize_logger(str(self.out_dir), self.out_dir.name)
+
+        # set environment variable for ngencerf backend
+        set_os_env_key(
+            OS_ENV_KEY_RESULTS_DIR, str(self.out_dir), override=False
+        )
+        set_os_env_key(
+            OS_ENV_KEY_NGEN_LOG_FILE_PREFIX, self.out_dir.name, override=False
+        )
 
         self._status = RunStatus.PREPROCESSED
 

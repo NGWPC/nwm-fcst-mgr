@@ -52,15 +52,47 @@ RUN --mount=type=cache,target=/root/.cache/pip,id=pip-cache \
         #"geopandas~=1.1.1"; \
     pip3 cache purge
 
+# ── EWTS (Error, Warning and Trapping System)
+#
+# Build args – override at build time to pin a branch, tag, or full commit SHA:
+#   docker build --build-arg EWTS_REF=v1.2.3 ...
+#   docker build --build-arg EWTS_REF=abc123def456 ...
+ARG EWTS_ORG=NGWPC
+ARG EWTS_REF=development
+ARG EWTS_CACHE_BUST=1
+
+# Clone nwm-ewts, install the Python package, capture git metadata for
+# provenance, then remove the source tree.
+# Try shallow clone by branch/tag name first; fall back to full clone + checkout
+# for bare commit SHAs (which git clone -b doesn't support).
+#
+# NOTE: Unlike the ngen Dockerfile, clone + pip install + cleanup are kept in a
+# single RUN so the source tree never persists in a layer.  In ngen the split is
+# safe because cmake installs the wheel to /opt/ewts before the source is removed;
+# here there is no cmake step, so the source must remain until pip finishes.
+RUN --mount=type=cache,target=/root/.cache/pip,id=pip-cache \
+    echo "EWTS cache bust: ${EWTS_CACHE_BUST}" && \
+    set -eux && \
+    ewts_dir="$(mktemp -d)" && \
+    git clone "https://github.com/${EWTS_ORG}/nwm-ewts.git" "${ewts_dir}" && \
+    cd "${ewts_dir}" && \
+    git checkout "${EWTS_REF}" && \
+    pip install "${ewts_dir}/runtime/python/ewts" && \
+    rm -rf "${ewts_dir}"
+
 # Install MSWM package
 ARG MSW_MGR_VERSION=development
+ARG MSWM_CACHE_BUST=1
 RUN --mount=type=cache,target=/root/.cache/pip,id=pip-cache \
     set -eux; \
+    echo "MSWM cache bust: ${MSWM_CACHE_BUST}" && \
     pip3 install mswm@git+https://github.com/NGWPC/nwm-msw-mgr.git@${MSW_MGR_VERSION} ; \
     pip3 cache purge
 
 # Install into the existing virtual environment without upgrading base packages
+ARG FCST_CACHE_BUST=1
 RUN set -eux; \
+    echo "FCST cache bust: ${FCST_CACHE_BUST}" && \
     pip3 install --no-deps . || pip3 install .; \
     pip3 cache purge;
 

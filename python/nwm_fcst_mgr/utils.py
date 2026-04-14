@@ -1,13 +1,10 @@
 """Utilities"""
 
-import logging
+import ewts
 from os import environ
 
-
 OS_ENV_KEY_RESULTS_DIR = "NGEN_RESULTS_DIR"
-
-LOG = logging.getLogger(__name__)
-
+OS_ENV_KEY_NGEN_LOG_FILE_PREFIX = "NGEN_LOG_FILE_PREFIX"
 
 def set_os_env_key(key: str, val: str, override: bool = True) -> None:
     """Set the value of the OS environment key.
@@ -22,6 +19,8 @@ def set_os_env_key(key: str, val: str, override: bool = True) -> None:
             If True, then do replace the existing value of that key if it already exists.
             If False, then do not replace the value.
     """
+    LOG = ewts.get_logger(ewts.FCST_MGR_ID).get_bound_logger()
+
     errors: list[Exception] = []
     if not isinstance(key, str):
         errors.append(TypeError(f"For key {key}, expected type {str}, got {type(key)}"))
