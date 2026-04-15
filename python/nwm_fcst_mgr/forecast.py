@@ -263,7 +263,7 @@ class ForecastExecutionManager:
         logger.info(f"Initializing NGEN run from:  {self.real_path}")
 
         # kick off ngen run and save stdout & stderr to ngen_stdout_stderr.log
-        log_file = self.out_dir / "ngen_stdout_stderr.log"
+        log_file = self.out_dir / f"{self.out_dir.name}_ngen_stdout_stderr.log"
 
         logger.info(f"Opening log file using mode {repr(log_file_open_mode)}: {log_file}")
         self.log_handle = open(log_file, log_file_open_mode)
