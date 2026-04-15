@@ -678,7 +678,7 @@ def run_hindcast(input_path, valid_yaml, fcst_run_name, cycle_interval, num_iter
             hind_kwargs['load_state_from'] = warm_start_state
             logger.info(f"Hindcast iteration at {hind_cycle} hours loading state from: {warm_start_state}")
 
-        hind_real_path = build_fcst(**hind_kwargs)
+        hind_real_path, _ = build_fcst(**hind_kwargs)
         logger.info(f"Hindcast realization file for iteration at {hind_cycle} hours written to: {hind_real_path}")
 
         # Run hindcasting period
@@ -750,7 +750,7 @@ def run_lagged_ensemble(input_path, valid_yaml, fcst_run_name, open_loop_state=N
                 logger.info(f"Lagged ensember {member} member initialized with closed loop state: {closed_loop_state}")
 
         # Create lagged ensemble member input files
-        member_real_path = build_fcst(**lag_ens_kwargs)
+        member_real_path, _ = build_fcst(**lag_ens_kwargs)
         logger.info(f"Lagged ensemble {member} member realization file written to: {member_real_path}")
 
         # Run hindcasting period
