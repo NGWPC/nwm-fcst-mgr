@@ -21,7 +21,7 @@ from nwm_fcst_mgr.consts import PARTITION_CONFIG_FILE_NAME_SUFFIX
 from nwm_fcst_mgr.exceptions import NgenCalledProcessError, NgenIntentionallyStoppedError
 from nwm_fcst_mgr.ngen_cli import NgenCLI
 from nwm_fcst_mgr.utils import initialize_logger, set_os_env_key, OS_ENV_KEY_RESULTS_DIR, OS_ENV_KEY_NGEN_LOG_FILE_PREFIX
-from mswm.manager import build_fcst, build_region, build_default, update_fcst_run
+from mswm.manager import build_fcst
 
 # Set valid cycle hours for each forecast configuration
 VALID_CYCLE_HOURS = {
@@ -41,15 +41,15 @@ class ConfigCache:
     """
     Cache for validation config and extracted values that are shared across multiple forecast runs
     Supports two modes:
-        from_valid=True: loads config from a valid_yaml file (validation-based workflow)
-        from_valid=False: loads gpkg and ngen_exe paths directly from run_dir (default/regionalization)
+        no_valid=False: (default) loads config from a valid_yaml file (validation-based workflow)
+        no_valid=True: loads gpkg and ngen_exe paths directly from run_dir (default/regionalization)
     """
-    def __init__(self, valid_yaml: str = None, run_dir: str = None, from_valid: bool = True):
-        self.from_valid = from_valid
+    def __init__(self, valid_yaml: str = None, run_dir: str = None, no_valid: bool = False):
+        self.no_valid = no_valid
 
-        if from_valid:
+        if not no_valid:
             if valid_yaml is None:
-                msg = "valid_yaml must be provided when from_valid=True"
+                msg = "valid_yaml must be provided when no_valid=True"
                 logger.critical(msg)
                 raise ValueError(msg)
             self.valid_yaml = valid_yaml
@@ -60,7 +60,7 @@ class ConfigCache:
             )
         else:
             if run_dir is None:
-                msg = "valid_yaml must be provided when from_valid=True"
+                msg = "run_dir must be provided when novalid=True"
                 logger.critical(msg)
                 raise ValueError(msg)
             self.valid_yaml = None
@@ -542,33 +542,6 @@ def _get_run_type_from_config(input_path: str) -> str:
     return run_type
 
 
-def _build_realization(input_path: str, run_type: str, **kwargs) -> str:
-    """
-    Call build_region or build_default based on run type
-
-    Parameters
-    ----------
-    input_path: str
-        Path to input.config file
-    run_type: str
-        Run type from input.config ('regionalization' or 'default')
-    **kwargs
-        Additional arguments passed to build_region or build_default
-
-    Returns
-    ---------
-    run_type string
-    """
-    if run_type == 'regionalization':
-        return build_region(input_path, **kwargs)
-    elif run_type == 'default':
-        return build_default(input_path, **kwargs)
-    else:
-        msg = f"Unupported run_type for from_valid=False workflow: {run_type}. Must be 'regionalization' or 'default'."
-        logger.critical(msg)
-        raise ValueError(msg)
-
-
 def read_troute_output(
         gage0: str,
         cwt_file: Path,
@@ -684,7 +657,7 @@ def check_hind_intervals(input_path: str, hind_interval: list) -> None:
 def run_forecast(
     real_path: str,
     valid_yaml: str = None,
-    from_valid: bool = True,
+    no_valid: bool = False,
     partition_file: str | None = None
 ):
     """
@@ -696,30 +669,30 @@ def run_forecast(
         Path to realization file for forecast
     valid_yaml : str
         Path to validation yaml file from previous run of nwm-cal-mgr
-    from_valid : bool
-        Boolean flag to create forecast from validation run
+    no_valid : bool
+        If False (default), use validation-based workflow. If True, use default/regionalzation workflow
     partition_file : str | None (optional) path to partition configuration file.
         If provided, the work will be divided among n processors where n in the number of partitions in this file.
         TODO add multiprocessing support to run_hindcast and run_lagged_ensemble.
     """
-    logger.info(f'Initializing forecast run (from_valid={from_valid})')
+    logger.info(f'Initializing forecast run (no_valid={no_valid})')
 
-    if from_valid:
+    if not no_valid:
         if valid_yaml is None:
-            msg = "valid_yaml must be provided when from_valid=True"
+            msg = "valid_yaml must be provided when no_valid=False"
             logger.critical(msg)
             raise ValueError(msg)
-        config_cache = ConfigCache(valid_yaml=valid_yaml, from_valid=True)
+        config_cache = ConfigCache(valid_yaml=valid_yaml, no_valid=False)
     else:
         if not Path(real_path).is_file():
             msg = f"Realization file does not exist: {real_path}"
             logger.critical(msg)
             raise FileNotFoundError(msg)
         run_dir = str(Path(real_path).parent)
-        config_cache = ConfigCache(run_dir=run_dir, from_valid=False)
+        config_cache = ConfigCache(run_dir=run_dir, no_valid=True)
 
     # Run forecast or cold start, depending on provided realization path
-    run_workflow(real_path, config_cache, suppress_output=not from_valid, partition_file=partition_file)
+    run_workflow(real_path, config_cache, suppress_output=no_valid, partition_file=partition_file)
     logger.info("Ngen run completed")
 
 
@@ -753,7 +726,7 @@ def run_hindcast(input_path, valid_yaml, fcst_run_name, cycle_interval, num_iter
         raise ValueError(msg)
 
     # Load config and extract once per workflow
-    config_cache = ConfigCache(valid_yaml=valid_yaml, from_valid=True)
+    config_cache = ConfigCache(valid_yaml=valid_yaml, no_valid=False)
 
     # Generate hindcast interval times in hours
     hind_interval = list(range(0, num_iterations * cycle_interval, cycle_interval))
@@ -813,7 +786,7 @@ def run_hindcast(input_path, valid_yaml, fcst_run_name, cycle_interval, num_iter
             hind_kwargs['load_state_from'] = warm_start_state
             logger.info(f"Hindcast iteration at {hind_cycle} hours loading state from: {warm_start_state}")
 
-        hind_real_path = build_fcst(**hind_kwargs)
+        hind_real_path, _ = build_fcst(**hind_kwargs)
         logger.info(f"Hindcast realization file for iteration at {hind_cycle} hours written to: {hind_real_path}")
 
         # Run hindcasting period
@@ -824,136 +797,6 @@ def run_hindcast(input_path, valid_yaml, fcst_run_name, cycle_interval, num_iter
         prev_hind_cycle = hind_cycle
 
 
-def run_lagged_ensemble(
-        input_path,
-        valid_yaml: str = None,
-        fcst_run_name: str = None,
-        from_valid: bool = True,
-        open_loop_state=None,
-        closed_loop_state=None
-):
-    """
-    Run lagged ensemble workflow, loading from open and closed loop AnA states
-
-    Parameters
-    ---------
-    input_path : str
-        Path to input.config file for hindcast
-    valid_yaml : str, optional
-        Path to validation yaml file from previous run of nwm-cal-mgr
-    fcst_run_name : str, optional
-        Name of the folder to be created for storing inputs/outputs for hindcast
-    from_valid : bool
-        If True, use validation-based workflow. If False, use default/regionalization workflow.
-    open_loop_state : str, optional
-        Path to directory containing open loop AnA state files to initialize no DA member
-    closed_loop_state : str, optional
-        Path to directory containing closed loop AnA state files to initialize all other members
-    """
-    logger.info(f'Initializing lagged ensemble runs from_valid={from_valid}')
-
-    if from_valid:
-        if valid_yaml is None or fcst_run_name is None:
-            msg = "valid_yaml and fcst_run_name must be provided when from_valid=True"
-            logger.critical(msg)
-            raise ValueError(msg)
-    else:
-        run_type = _get_run_type_from_config(input_path)
-
-    # Set list of medium range lagged ensemble runs and hours of forcing lag
-    ens_members = {
-        'no_da': 0,
-        'mem1': 0,
-        'mem2': 6,
-        'mem3': 12,
-        'mem4': 18,
-        'mem5': 24,
-        'mem6': 30
-    }
-
-    # For from_valid=True, config_cache is the same for all members
-    if from_valid:
-        config_cache = ConfigCache(valid_yaml=valid_yaml, from_valid=True)
-
-    # Loop through lagged ensemble members
-    for member, lag in ens_members.items():
-
-        logger.info(f"Setting up lagged ensemble run for medium range {member}")
-
-        # Build realization via msw-mgr
-        if from_valid:
-            lag_ens_kwargs = {
-                'input_path': input_path,
-                'valid_yaml': valid_yaml,
-                'fcst_run_name': fcst_run_name,
-                'use_lagged_ens': True,
-                'lagged_ens_mem': member,
-                'forcing_lag': lag
-            }
-
-            # Load open loop AnA run state for no_da member, load closed loop AnA run state for all other members
-            if member == "no_da":
-                if open_loop_state is not None:
-                    lag_ens_kwargs['load_state_from'] = open_loop_state
-                    logger.info(f"Lagged ensember {member} member initialized with open loop state: {open_loop_state}")
-            else:
-                if closed_loop_state is not None:
-                    lag_ens_kwargs['load_state_from'] = closed_loop_state
-                    logger.info(f"Lagged ensember {member} member initialized with closed loop state: {closed_loop_state}")
-
-            # Create lagged ensemble member input files
-            member_real_path = build_fcst(**lag_ens_kwargs)
-
-        else:
-            lag_ens_kwargs = {
-                'use_lagged_ens': True,
-                'lagged_ens_mem': member,
-                'forcing_lag': lag
-            }
-
-            # Load open loop AnA run state for no_da member, load closed loop AnA run state for all other members
-            if member == "no_da":
-                # Build no_da member realization from scratch
-                if open_loop_state is not None:
-                    lag_ens_kwargs['load_state_from'] = open_loop_state
-                    logger.info(f"Lagged ensember {member} member initialized with open loop state: {open_loop_state}")
-
-                member_real_path = _build_realization(
-                    input_path=input_path,
-                    run_type=run_type,
-                    **lag_ens_kwargs
-                )
-                no_da_real_path = member_real_path
-            else:
-                # Copy no_da run folder and update forcing for each subsequent member
-                src_run_path = str(Path(no_da_real_path).parent)
-                dst_run_path = str(Path(no_da_real_path).parent.parent / f"lagged_ens_{member}")
-
-                if closed_loop_state is not None:
-                    lag_ens_kwargs['load_state_from'] = closed_loop_state
-                    logger.info(f"Lagged ensember {member} member initialized with closed loop state: {closed_loop_state}")
-
-                member_real_path = update_fcst_run(
-                    input_path=input_path,
-                    src_run_path=src_run_path,
-                    dst_run_path=dst_run_path,
-                    **lag_ens_kwargs
-                )
-
-        logger.info(f"Lagged ensemble {member} member realization file written to: {member_real_path}")
-
-        # For from_valid=False, derive run_dir from each member's realization path
-        if not from_valid:
-            config_cache = ConfigCache(
-                run_dir=str(Path(member_real_path).parent),
-                from_valid=False
-            )
-
-        # Run lagged ensemble period
-        run_workflow(member_real_path, config_cache, suppress_output=not from_valid)
-        logger.info(f"Lagged ensemble {member} member run completed")
-
-
 def parse_args():
     # Create command line parser
     parser = argparse.ArgumentParser(prog="nwm-fcst-mgr",
@@ -962,12 +805,12 @@ def parse_args():
 
     # Define parent parser for shared arguments
     parent_parser = argparse.ArgumentParser(add_help=False)
-    parent_parser.add_argument('--from_valid', action=argparse.BooleanOptionalAction, default=True, help='use validation-based workflow (default=True)')
     parent_parser.add_argument('--valid_yaml', type=str, default=None, help='Path to validation yaml file from previous run of nwm-cal-mgr')
 
     # Subcommand: forecast_workflow
     forecast_workflow_sub = subparser.add_parser("run_forecast", parents=[parent_parser], help="Run forecast workflow")
     forecast_workflow_sub.add_argument('real_path', type=str, help='Path to cold start or forecast period realization file')
+    forecast_workflow_sub.add_argument('--no_valid', action="store_true", default=False, help='Use workflow without validation run (default=False)')
 
     # Subcommand: hindcast_workflow
     hindcast_workflow_sub = subparser.add_parser("run_hindcast", parents=[parent_parser], help="Run hindcast workflow")
@@ -976,13 +819,6 @@ def parse_args():
     hindcast_workflow_sub.add_argument("cycle_interval", type=int, help="Cycle interval (in hours) between hindcast runs")
     hindcast_workflow_sub.add_argument("num_iterations", type=int, help="Number of hindcast cycles to perform")
     hindcast_workflow_sub.add_argument("--cold_start_state", type=str, default=None, help="Path to directory containing cold start state files")
-
-    # Subcommand: lagged_ensembles_workflow
-    lagged_ens_workflow_sub = subparser.add_parser("run_lagged_ensemble", parents=[parent_parser], help="Run lagged ensembles workflow")
-    lagged_ens_workflow_sub.add_argument('input_path', type=str, help='Path to input.config file for forecast')
-    lagged_ens_workflow_sub.add_argument("--fcst_run_name", help="Name of the folder to be created for storing inputs/outputs from running ngen")
-    lagged_ens_workflow_sub.add_argument("--open_loop_state", type=str, default=None, help="Path to directory containing open loop ana state files")
-    lagged_ens_workflow_sub.add_argument("--closed_loop_state", type=str, default=None, help="Path to directory containing closed loop ana state files")
 
     return parser.parse_args()
 
@@ -994,17 +830,13 @@ def main():
 
     # Run fcst/hindcast workflows
     if args.command == "run_forecast":
-        run_forecast(real_path=args.real_path, valid_yaml=args.valid_yaml, from_valid=args.from_valid)
+        run_forecast(real_path=args.real_path, valid_yaml=args.valid_yaml, no_valid=args.no_valid)
     elif args.command == "run_hindcast":
         run_hindcast(valid_yaml=args.valid_yaml, input_path=args.input_path,
                      fcst_run_name=args.fcst_run_name, cycle_interval=args.cycle_interval,
                      num_iterations=args.num_iterations, cold_start_state=args.cold_start_state)
-    elif args.command == "run_lagged_ensemble":
-        run_lagged_ensemble(valid_yaml=args.valid_yaml, input_path=args.input_path,
-                            fcst_run_name=args.fcst_run_name, from_valid=args.from_valid,
-                            open_loop_state=args.open_loop_state, closed_loop_state=args.closed_loop_state)
     else:
-        raise ValueError(f"Unexpected command: {args.command}. Use either 'run_forecast', 'run_hindcast', or 'run_lagged_ensemble'.")
+        raise ValueError(f"Unexpected command: {args.command}. Use either 'run_forecast', o r'run_hindcast'")
 
 
 if __name__ == "__main__":
