@@ -655,14 +655,20 @@ def run_hindcast(input_path, valid_yaml, fcst_run_name, cycle_interval, num_iter
             logger.info(f"Initializing warm start AnA run for hindcast iteration at {hind_cycle} hours")
 
             # Generate msw-mgr inputs for warm start run for hindcast iteration
-            warm_start_real_path, warm_start_state = build_fcst(input_path=input_path, valid_yaml=valid_yaml,
+            warm_start_real_path, warm_start_state, partition_file  = build_fcst(input_path=input_path, valid_yaml=valid_yaml,
                                                                 fcst_run_name=fcst_run_name, use_warm_start=True,
                                                                 hind_cycle=hind_cycle, prev_hind_cycle=prev_hind_cycle,
                                                                 save_state=True)
             logger.info(f"Warm start realization file for hindcast iteration at {hind_cycle} hours written to: {warm_start_real_path}")
 
             # Execute warm start ngen run to generate hindcasting model states
-            run_workflow(valid_yaml, warm_start_real_path, config_cache, suppress_output=True)
+            run_workflow(
+                valid_yaml,
+                warm_start_real_path,
+                config_cache,
+                suppress_output=True,
+                partition_file=partition_file,
+            )
             logger.info(f"Warm start run for hindcast iteration at {hind_cycle} hours completed")
             logger.info(f"Warm start state saved to {warm_start_state}")
 
@@ -687,11 +693,16 @@ def run_hindcast(input_path, valid_yaml, fcst_run_name, cycle_interval, num_iter
             hind_kwargs['load_state_from'] = warm_start_state
             logger.info(f"Hindcast iteration at {hind_cycle} hours loading state from: {warm_start_state}")
 
-        hind_real_path = build_fcst(**hind_kwargs)
+        hind_real_path, _, partition_file = build_fcst(**hind_kwargs)
         logger.info(f"Hindcast realization file for iteration at {hind_cycle} hours written to: {hind_real_path}")
 
         # Run hindcasting period
-        run_workflow(valid_yaml, hind_real_path, config_cache)
+        run_workflow(
+            valid_yaml,
+            hind_real_path,
+            config_cache,
+            partition_file=partition_file,
+        )
         logger.info(f"Hindcast run for iteration at {hind_cycle} hours completed")
 
         # Store previous hindcast cycle value to set next warm start duration
@@ -770,12 +781,17 @@ def run_lagged_ensemble(
                 logger.info(f"Lagged ensember {member} member initialized with closed loop state: {closed_loop_state}")
 
         # Create lagged ensemble member input files
-        member_real_path = build_fcst(**lag_ens_kwargs)
-        logger.info(f"Lagged ensemble {member} member realization file written to: {member_real_path}")
+        member_real_path, _, partition_file = build_fcst(**lag_ens_kwargs)
+        logger.info(f"Lagged ensemble {member} member realization file written to: {member_real_path}. Partition file is: {repr(partition_file)}")
 
         # Run hindcasting period
         try:
-            run_workflow(valid_yaml, member_real_path, config_cache, partition_file=partition_file)
+            run_workflow(
+                valid_yaml,
+                member_real_path,
+                config_cache,
+                partition_file=partition_file,
+            )
         except NgenIntentionallyStoppedError as e:
             msg = f"Ngen stopped early: {e}"
             logging.critical(msg)
