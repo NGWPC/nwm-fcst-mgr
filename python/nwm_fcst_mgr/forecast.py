@@ -19,10 +19,9 @@ import yaml
 import argparse
 
 from nwm_fcst_mgr.consts import PARTITION_CONFIG_FILE_NAME_SUFFIX
-from nwm_fcst_mgr.log_level import initialize_logger
 from nwm_fcst_mgr.exceptions import NgenCalledProcessError, NgenIntentionallyStoppedError
 from nwm_fcst_mgr.ngen_cli import NgenCLI
-from nwm_fcst_mgr.utils import set_os_env_key, OS_ENV_KEY_RESULTS_DIR, OS_ENV_KEY_NGEN_LOG_FILE_PREFIX
+from nwm_fcst_mgr.utils import initialize_logger, set_os_env_key, OS_ENV_KEY_RESULTS_DIR, OS_ENV_KEY_NGEN_LOG_FILE_PREFIX
 from mswm.manager import build_fcst
 
 # Set valid cycle hours for each forecast configuration
