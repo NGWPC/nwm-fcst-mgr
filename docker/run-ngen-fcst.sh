@@ -237,6 +237,6 @@ if [ -n "$STDOUT_FILE" ]; then
   echo "---------------- end of $STDOUT_FILE -----------------------------"
 fi
 
-echo "[run-ngen-fcst.sh] Done running $SCRIPT_MODULE SCRIPT_COMMAND"
+echo "[run-ngen-fcst.sh] Done running $SCRIPT_MODULE $SCRIPT_COMMAND"
 
 exit $python_exit_code
