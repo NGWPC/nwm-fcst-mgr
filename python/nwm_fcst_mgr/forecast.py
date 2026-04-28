@@ -639,9 +639,11 @@ def run_hindcast(input_path, valid_yaml, fcst_run_name, cycle_interval, num_iter
     # Initialize previous hindcast cycle for coordinating warm starts
     prev_hind_cycle = 0
 
+    # Initialize previous state to be loaded for warm start
+    prev_warm_start_state = cold_start_state
+
     # Loop through hindcast intervals
     for hind_cycle in hind_interval:
-
 
         # Skip warm start for first hindcast, which will use the cold start state
         if hind_cycle != 0:
@@ -652,13 +654,16 @@ def run_hindcast(input_path, valid_yaml, fcst_run_name, cycle_interval, num_iter
             warm_start_real_path, warm_start_state = build_fcst(input_path=input_path, valid_yaml=valid_yaml,
                                                                 fcst_run_name=fcst_run_name, use_warm_start=True,
                                                                 hind_cycle=hind_cycle, prev_hind_cycle=prev_hind_cycle,
-                                                                save_state=True)
+                                                                save_state=True, load_state_from=prev_warm_start_state)
             logger.info(f"Warm start realization file for hindcast iteration at {hind_cycle} hours written to: {warm_start_real_path}")
 
             # Execute warm start ngen run to generate hindcasting model states
             run_workflow(valid_yaml, warm_start_real_path, config_cache, suppress_output=True)
             logger.info(f"Warm start run for hindcast iteration at {hind_cycle} hours completed")
             logger.info(f"Warm start state saved to {warm_start_state}")
+
+            # Update state to be used by warm start in next iteration
+            prev_warm_start_state = warm_start_state
 
         # Create hindcast input files
         hind_kwargs = {
