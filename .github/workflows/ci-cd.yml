@@ -19,8 +19,28 @@ on:
       - release-candidate
   workflow_dispatch:
     inputs:
+      GHCR_ORG:
+        description: 'GHCR_ORG'
+        required: false
+        type: string
       NGEN_IMAGE_TAG:
         description: 'NGEN_IMAGE_TAG'
+        required: false
+        type: string
+      EWTS_ORG:
+        description: 'EWTS_ORG'
+        required: false
+        type: string
+      EWTS_REF:
+        description: 'EWTS_REF'
+        required: false
+        type: string
+      MSW_MGR_ORG:
+        description: 'MSW_MGR_ORG'
+        required: false
+        type: string
+      MSW_MGR_REF:
+        description: 'MSW_MGR_REF'
         required: false
         type: string
 
@@ -177,10 +197,14 @@ jobs:
           push: true
           tags: ${{ needs.setup.outputs.image_base }}:${{ needs.setup.outputs.test_image_tag }}
           build-args: |
-            ORG=${{ needs.setup.outputs.org }}
+            GHCR_ORG=${{ inputs.GHCR_ORG || needs.setup.outputs.org }}
             NGEN_IMAGE_TAG=${{ inputs.NGEN_IMAGE_TAG || 'latest' }}
             BASE_IMAGE_DIGEST=${{ needs.setup.outputs.ngen_image_digest }}
             BASE_IMAGE_REVISION=${{ needs.setup.outputs.ngen_image_revision }}
+            EWTS_ORG=${{ inputs.EWTS_ORG || github.repository_owner }}
+            EWTS_REF=${{ inputs.EWTS_REF || 'development' }}
+            MSW_MGR_ORG=${{ inputs.MSW_MGR_ORG || github.repository_owner }}
+            MSW_MGR_REF=${{ inputs.MSW_MGR_REF || 'development' }}
             IMAGE_SOURCE=https://github.com/${{ github.repository }}
             IMAGE_VENDOR=${{ github.repository_owner }}
             IMAGE_VERSION=${{ needs.setup.outputs.clean_ref }}
