@@ -67,6 +67,7 @@ jobs:
       test_image_tag: ${{ steps.vars.outputs.test_image_tag }}
       alias_tag: ${{ steps.vars.outputs.alias_tag }}
       clean_ref: ${{ steps.vars.outputs.clean_ref }}
+      default_ref: ${{ steps.vars.outputs.default_ref }}
       ngen_image_digest: ${{ steps.vars.outputs.ngen_image_digest }}
       ngen_image_revision: ${{ steps.vars.outputs.ngen_image_revision }}
       ewts_revision: ${{ steps.vars.outputs.ewts_revision }}
@@ -101,6 +102,18 @@ jobs:
           # clean ref name and short commit sha
           CLEAN_REF=$(echo "$REAL_REF" | tr '[:upper:]' '[:lower:]' | sed 's/\//-/g')
           SHORT_SHA="${REAL_SHA:0:7}"
+
+          # default source-repo ref: follow the release-line branch we're building from
+          # (development / ngwpc-candidate / ngwpc-release); tags and other branches fall
+          # back to development. Override per source repo via the *_REF dispatch inputs.
+          case "${GITHUB_REF_TYPE}:${GITHUB_REF_NAME}" in
+            branch:development|branch:ngwpc-candidate|branch:ngwpc-release)
+              DEFAULT_REF="$GITHUB_REF_NAME" ;;
+            *)
+              DEFAULT_REF="development" ;;
+          esac
+          # use an explicit *_REF input if provided, else DEFAULT_REF
+          ref_or_default() { [ -n "$1" ] && echo "$1" || echo "$DEFAULT_REF"; }
 
           # logic for the tags:
           # test_image_tag (commit short sha): used for the initial build and test
@@ -145,8 +158,8 @@ jobs:
             echo "${sha:-unknown}"
           }
 
-          EWTS_REVISION=$(resolve_sha "https://github.com/${{ inputs.EWTS_ORG || github.repository_owner }}/nwm-ewts.git" "${{ inputs.EWTS_REF || 'development' }}")
-          MSW_MGR_REVISION=$(resolve_sha "https://github.com/${{ inputs.MSW_MGR_ORG || github.repository_owner }}/nwm-msw-mgr.git" "${{ inputs.MSW_MGR_REF || 'development' }}")
+          EWTS_REVISION=$(resolve_sha "https://github.com/${{ inputs.EWTS_ORG || github.repository_owner }}/nwm-ewts.git" "$(ref_or_default "${{ inputs.EWTS_REF }}")")
+          MSW_MGR_REVISION=$(resolve_sha "https://github.com/${{ inputs.MSW_MGR_ORG || github.repository_owner }}/nwm-msw-mgr.git" "$(ref_or_default "${{ inputs.MSW_MGR_REF }}")")
 
           # save outputs
           cat >> "$GITHUB_OUTPUT" <<EOF
@@ -157,6 +170,7 @@ jobs:
           commit_sha=${REAL_SHA}
           commit_sha_short=${SHORT_SHA}
           clean_ref=${CLEAN_REF}
+          default_ref=${DEFAULT_REF}
           ngen_image_digest=${NGEN_IMAGE_DIGEST}
           ngen_image_revision=${NGEN_IMAGE_REVISION}
           ewts_revision=${EWTS_REVISION}
@@ -223,10 +237,10 @@ jobs:
             BASE_IMAGE_DIGEST=${{ needs.setup.outputs.ngen_image_digest }}
             BASE_IMAGE_REVISION=${{ needs.setup.outputs.ngen_image_revision }}
             EWTS_ORG=${{ inputs.EWTS_ORG || github.repository_owner }}
-            EWTS_REF=${{ inputs.EWTS_REF || 'development' }}
+            EWTS_REF=${{ inputs.EWTS_REF || needs.setup.outputs.default_ref }}
             EWTS_REVISION=${{ needs.setup.outputs.ewts_revision }}
             MSW_MGR_ORG=${{ inputs.MSW_MGR_ORG || github.repository_owner }}
-            MSW_MGR_REF=${{ inputs.MSW_MGR_REF || 'development' }}
+            MSW_MGR_REF=${{ inputs.MSW_MGR_REF || needs.setup.outputs.default_ref }}
             MSW_MGR_REVISION=${{ needs.setup.outputs.msw_mgr_revision }}
             IMAGE_SOURCE=https://github.com/${{ github.repository }}
             IMAGE_VENDOR=${{ github.repository_owner }}
