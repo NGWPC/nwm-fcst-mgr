@@ -44,17 +44,25 @@ ARG IMAGE_SOURCE="unknown"
 ARG IMAGE_VENDOR="unknown"
 ARG IMAGE_VERSION="unknown"
 ARG IMAGE_REVISION="unknown"
+ARG EWTS_REVISION="unknown"
+ARG MSW_MGR_REVISION="unknown"
 
-# OCI Standard Labels
+# Image Labels: OCI-spec annotations followed by custom source-repo metadata.
 LABEL org.opencontainers.image.base.name="${NGEN_IMAGE}" \
     org.opencontainers.image.base.digest="${BASE_IMAGE_DIGEST}" \
-    io.${IMAGE_NAMESPACE}.image.base.revision="${BASE_IMAGE_REVISION}" \
     org.opencontainers.image.source="${IMAGE_SOURCE}" \
     org.opencontainers.image.vendor="${IMAGE_VENDOR}" \
     org.opencontainers.image.version="${IMAGE_VERSION}" \
     org.opencontainers.image.revision="${IMAGE_REVISION}" \
     org.opencontainers.image.title="NGEN Forecast/Hindcast Manager" \
-    org.opencontainers.image.description="Docker image for the NGEN Forecast/Hindcast application"
+    org.opencontainers.image.description="Docker image for the NGEN Forecast/Hindcast application" \
+    io.${IMAGE_NAMESPACE}.image.base.revision="${BASE_IMAGE_REVISION}" \
+    io.${IMAGE_NAMESPACE}.ewts.org="${EWTS_ORG}" \
+    io.${IMAGE_NAMESPACE}.ewts.ref="${EWTS_REF}" \
+    io.${IMAGE_NAMESPACE}.ewts.revision="${EWTS_REVISION}" \
+    io.${IMAGE_NAMESPACE}.msw.mgr.org="${MSW_MGR_ORG}" \
+    io.${IMAGE_NAMESPACE}.msw.mgr.ref="${MSW_MGR_REF}" \
+    io.${IMAGE_NAMESPACE}.msw.mgr.revision="${MSW_MGR_REVISION}"
 
 # Activate the existing virtual environment
 ENV PATH="/ngen-app/ngen-python/bin:${PATH}"

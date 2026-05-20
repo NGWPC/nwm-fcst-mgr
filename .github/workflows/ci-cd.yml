@@ -69,6 +69,8 @@ jobs:
       clean_ref: ${{ steps.vars.outputs.clean_ref }}
       ngen_image_digest: ${{ steps.vars.outputs.ngen_image_digest }}
       ngen_image_revision: ${{ steps.vars.outputs.ngen_image_revision }}
+      ewts_revision: ${{ steps.vars.outputs.ewts_revision }}
+      msw_mgr_revision: ${{ steps.vars.outputs.msw_mgr_revision }}
     steps:
       - name: Compute image vars
         id: vars
@@ -127,20 +129,39 @@ jobs:
           # base image (ngen) metadata for Dockerfile labels
           NGEN_IMAGE_TAG="${{ inputs.NGEN_IMAGE_TAG || 'latest' }}"
           NGEN_IMAGE="ghcr.io/${ORG}/ngen:${NGEN_IMAGE_TAG}"
-          NGEN_INSPECT=$(skopeo inspect "docker://${NGEN_IMAGE}" 2>/dev/null || echo '{}')
+          NGEN_INSPECT=$(skopeo inspect --override-os linux --override-arch amd64 "docker://${NGEN_IMAGE}" 2>/dev/null || echo '{}')
           NGEN_IMAGE_DIGEST=$(echo "$NGEN_INSPECT" | jq -r '.Digest // "unknown"')
           NGEN_IMAGE_REVISION=$(echo "$NGEN_INSPECT" | jq -r '.Labels["org.opencontainers.image.revision"] // "unknown"')
 
+          # resolve each source repo's ref (branch/tag/SHA) to its commit SHA for revision labels
+          resolve_sha() {
+            local url="$1" ref="$2" out sha
+            # a full 40-char SHA can't be looked up via ls-remote; use it directly
+            if [[ "$ref" =~ ^[0-9a-f]{40}$ ]]; then echo "$ref"; return; fi
+            out=$(git ls-remote "$url" "$ref" "refs/tags/${ref}^{}" 2>/dev/null)
+            # prefer the dereferenced commit (^{}) for annotated tags; else first match
+            sha=$(echo "$out" | grep '\^{}$' | head -n1 | cut -f1)
+            [ -z "$sha" ] && sha=$(echo "$out" | head -n1 | cut -f1)
+            echo "${sha:-unknown}"
+          }
+
+          EWTS_REVISION=$(resolve_sha "https://github.com/${{ inputs.EWTS_ORG || github.repository_owner }}/nwm-ewts.git" "${{ inputs.EWTS_REF || 'development' }}")
+          MSW_MGR_REVISION=$(resolve_sha "https://github.com/${{ inputs.MSW_MGR_ORG || github.repository_owner }}/nwm-msw-mgr.git" "${{ inputs.MSW_MGR_REF || 'development' }}")
+
           # save outputs
-          echo "org=${ORG}" >> "$GITHUB_OUTPUT"
-          echo "image_base=${IMAGE_BASE}" >> "$GITHUB_OUTPUT"
-          echo "test_image_tag=${TEST_TAG}" >> "$GITHUB_OUTPUT"
-          echo "alias_tag=${ALIAS}" >> "$GITHUB_OUTPUT"
-          echo "commit_sha=${REAL_SHA}" >> "$GITHUB_OUTPUT"
-          echo "commit_sha_short=${SHORT_SHA}" >> "$GITHUB_OUTPUT"
-          echo "clean_ref=${CLEAN_REF}" >> "$GITHUB_OUTPUT"
-          echo "ngen_image_digest=${NGEN_IMAGE_DIGEST}" >> "$GITHUB_OUTPUT"
-          echo "ngen_image_revision=${NGEN_IMAGE_REVISION}" >> "$GITHUB_OUTPUT"
+          cat >> "$GITHUB_OUTPUT" <<EOF
+          org=${ORG}
+          image_base=${IMAGE_BASE}
+          test_image_tag=${TEST_TAG}
+          alias_tag=${ALIAS}
+          commit_sha=${REAL_SHA}
+          commit_sha_short=${SHORT_SHA}
+          clean_ref=${CLEAN_REF}
+          ngen_image_digest=${NGEN_IMAGE_DIGEST}
+          ngen_image_revision=${NGEN_IMAGE_REVISION}
+          ewts_revision=${EWTS_REVISION}
+          msw_mgr_revision=${MSW_MGR_REVISION}
+          EOF
 
   # CodeQL scan
   codeql-scan:
@@ -203,8 +224,10 @@ jobs:
             BASE_IMAGE_REVISION=${{ needs.setup.outputs.ngen_image_revision }}
             EWTS_ORG=${{ inputs.EWTS_ORG || github.repository_owner }}
             EWTS_REF=${{ inputs.EWTS_REF || 'development' }}
+            EWTS_REVISION=${{ needs.setup.outputs.ewts_revision }}
             MSW_MGR_ORG=${{ inputs.MSW_MGR_ORG || github.repository_owner }}
             MSW_MGR_REF=${{ inputs.MSW_MGR_REF || 'development' }}
+            MSW_MGR_REVISION=${{ needs.setup.outputs.msw_mgr_revision }}
             IMAGE_SOURCE=https://github.com/${{ github.repository }}
             IMAGE_VENDOR=${{ github.repository_owner }}
             IMAGE_VERSION=${{ needs.setup.outputs.clean_ref }}
