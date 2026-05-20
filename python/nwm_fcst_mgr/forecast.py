@@ -142,11 +142,17 @@ class ForecastExecutionManager:
             else:
                 raise e
 
+    def __del__(self):
+        self.close()
+
     def close(self):
+        if hasattr(self, "__closed") and self.__closed:
+            return
         try:
             self._stop_ngen()
         finally:
             self._close_log()
+            self.__closed = True
 
     def _close_log(self):
         if self.log_handle is not None:
