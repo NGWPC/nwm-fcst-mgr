@@ -80,13 +80,19 @@ class RunStatus(Enum):
 
 
 class ForecastExecutionManager:
-    """
-    Context manager for executing forecast via asynchronous ngen call.
+    """Context manager for executing forecast via asynchronous ngen call.
+
     To run asynchronously, use wait=False during call to execute().
     To halt execution, either exit the context manager, or call schedule_ngen_stoppage().
 
-    partition_file: (optional) path to partition configuration file.
-        If provided, the work will be divided among n processors where n in the number of partitions in this file.
+    Parameters
+    ----------
+    real_path : str 
+        Path to existing realization file
+    config_cache : ConfigCache
+        Instance of ConfigCache
+    partition_file : str, optional
+        Path to partition configuration file. If provided, the work will be divided among n processors where n is the number of partitions in this file.
     """
 
     def __init__(
