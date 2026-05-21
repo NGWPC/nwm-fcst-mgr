@@ -12,13 +12,12 @@ from datetime import datetime, timedelta
 from enum import Enum, auto
 from pathlib import Path
 
-from ewts import Payload, Status
-
 import geopandas as gpd
 import matplotlib.pyplot as plt
 import netCDF4
 import pandas as pd
 import yaml
+from ewts import Payload, Status
 from mswm.manager import build_fcst
 
 from nwm_fcst_mgr.consts import PARTITION_CONFIG_FILE_NAME_SUFFIX
@@ -45,7 +44,7 @@ VALID_CYCLE_HOURS = {
 }
 
 # setup the logger
-logger = initialize_logger()
+logger, _ = initialize_logger()
 
 
 class ConfigCache:
