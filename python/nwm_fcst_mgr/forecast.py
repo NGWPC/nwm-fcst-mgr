@@ -112,8 +112,12 @@ class ForecastExecutionManager:
         partition_file: str | None = None,
     ):
         self._status = RunStatus.NOSTATUS
-
         self.real_path = real_path
+
+        global logger
+        logger, self.log_file_path = initialize_logger(str(self.out_dir), self.out_dir.name)
+        logger.info(Payload(status=Status.INITTING))
+
         self.config_cache = config_cache
         self.partition_file = partition_file
 
@@ -123,9 +127,6 @@ class ForecastExecutionManager:
         self.gpkg_nexus = None
         self.ngen_exe = None
         self.gage0 = None
-
-        # Set during preprocess()
-        self.log_file_path: Path | None = None
 
         # Set during execute()
         self.cmd = None
@@ -138,6 +139,8 @@ class ForecastExecutionManager:
 
         # If set to True, then the ngen proc will be sent a SIGTERM
         self._stop_ngen_flag = False
+
+        logger.info(Payload(status=Status.INITTED))
 
     @property
     def out_dir(self) -> Path:
@@ -287,11 +290,6 @@ class ForecastExecutionManager:
         self.ngen_exe = self.config_cache.ngen_exe
         self.gage0 = self.config_cache.gage0
 
-        global logger
-        logger, log_file_path = initialize_logger(str(self.out_dir), self.out_dir.name)
-        logger.info(Payload(status=Status.INITTING))
-        self.log_file_path = log_file_path
-
         # set environment variable for ngencerf backend
         set_os_env_key(
             OS_ENV_KEY_RESULTS_DIR, str(self.out_dir), override=False
@@ -301,7 +299,6 @@ class ForecastExecutionManager:
         )
 
         self._status = RunStatus.PREPROCESSED
-        logger.info(Payload(status=Status.INITTED))
 
     def execute(self, wait: bool = True, log_file_open_mode: str = "a+") -> None:
         """Execute ngen run for either cold-start or forecast period.
