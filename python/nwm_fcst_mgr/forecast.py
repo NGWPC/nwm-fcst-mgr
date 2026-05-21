@@ -193,7 +193,7 @@ class ForecastExecutionManager:
             raise RuntimeError("self.proc not initialized")
 
         logger.info("Intentionally stopping ngen...")
-        stop_timeout_sec = 5
+        stop_timeout_sec = 10
         signal_to_send = signal.SIGTERM
         deadline = time.perf_counter() + stop_timeout_sec
 
