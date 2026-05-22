@@ -95,6 +95,9 @@ class ForecastExecutionManager:
     To run asynchronously, use wait=False during call to execute().
     To halt execution, either exit the context manager, or call schedule_ngen_stoppage().
 
+    ``fcst_mgr_log_file_path`` is the log file of this module.
+    ``ngen_proc_stdout_stderr_log_file_path`` is from the subprocess call to the ``ngen`` executable.
+
     Parameters
     ----------
     real_path : str 
@@ -115,8 +118,9 @@ class ForecastExecutionManager:
         self.real_path = real_path
 
         global logger
-        logger, self.log_file_path = initialize_logger(str(self.out_dir), self.out_dir.name)
+        logger, self.fcst_mgr_log_file_path = initialize_logger(str(self.out_dir), self.out_dir.name)
         logger.info(Payload(status=Status.INITTING))
+        self.ngen_proc_stdout_stderr_log_file_path = self.out_dir / f"{self.out_dir.name}_ngen_stdout_stderr.log"
 
         self.config_cache = config_cache
         self.partition_file = partition_file
@@ -313,11 +317,9 @@ class ForecastExecutionManager:
 
         logger.info(f"Initializing NGEN run from:  {self.real_path}")
 
-        # kick off ngen run and save stdout & stderr to ngen_stdout_stderr.log
-        log_file = self.out_dir / f"{self.out_dir.name}_ngen_stdout_stderr.log"
-
-        logger.info(f"Opening log file using mode {repr(log_file_open_mode)}: {log_file}")
-        self.log_handle = open(log_file, log_file_open_mode)
+        # Kick off ngen run and save stdout & stderr to ngen_stdout_stderr.log
+        logger.info(f"Opening log file using mode {repr(log_file_open_mode)}: {self.ngen_proc_stdout_stderr_log_file_path}")
+        self.log_handle = open(self.ngen_proc_stdout_stderr_log_file_path, log_file_open_mode)
 
         ngen_cli = NgenCLI(
             ngen_path=self.ngen_exe,
