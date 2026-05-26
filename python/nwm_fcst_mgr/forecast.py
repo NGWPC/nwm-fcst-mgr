@@ -18,6 +18,7 @@ import netCDF4
 import pandas as pd
 import yaml
 from ewts import Payload, Status
+from ewts.modules import ModuleKey
 from mswm.manager import build_fcst
 
 from nwm_fcst_mgr.consts import PARTITION_CONFIG_FILE_NAME_SUFFIX
@@ -32,6 +33,8 @@ from nwm_fcst_mgr.utils import (
     initialize_logger,
     set_os_env_key,
 )
+
+MODNM = ModuleKey.FCST_MGR.value
 
 # Set valid cycle hours for each forecast configuration
 VALID_CYCLE_HOURS = {
@@ -119,7 +122,7 @@ class ForecastExecutionManager:
 
         global logger
         logger, self.fcst_mgr_log_file_path = initialize_logger(str(self.out_dir), self.out_dir.name)
-        logger.info(Payload(status=Status.INITTING))
+        logger.info(Payload(status=Status.INITTING, modnm=MODNM))
         self.ngen_proc_stdout_stderr_log_file_path = self.out_dir / f"{self.out_dir.name}_ngen_stdout_stderr.log"
 
         self.config_cache = config_cache
@@ -144,7 +147,7 @@ class ForecastExecutionManager:
         # If set to True, then the ngen proc will be sent a SIGTERM
         self._stop_ngen_flag = False
 
-        logger.info(Payload(status=Status.INITTED))
+        logger.info(Payload(status=Status.INITTED, modnm=MODNM))
 
     @property
     def out_dir(self) -> Path:
@@ -193,6 +196,7 @@ class ForecastExecutionManager:
                         Payload(
                             status=Status.ERROR,
                             msg=f"Unhandled exception in ForecastExecutionManager: {sys.exc_info()[1]}",
+                            modnm=MODNM,
                         )
                     )
 
@@ -266,11 +270,13 @@ class ForecastExecutionManager:
                 pass
             case 0:
                 self._status = RunStatus.EXECUTION_SUCCESS
-                logger.info(Payload(status=Status.COMPLETE, msg="ngen completed"))
+                logger.info(
+                    Payload(status=Status.COMPLETE, msg="ngen completed", modnm=MODNM)
+                )
             case _:
                 self._status = RunStatus.EXECUTION_FAILED
                 msg = f"Ngen run failed with return code {self.proc.returncode}. Command: {self.cmd}. Cwd: {self.cwd}"
-                logger.critical(Payload(status=Status.ERROR, msg=msg))
+                logger.critical(Payload(status=Status.ERROR, msg=msg, modnm=MODNM))
                 raise NgenCalledProcessError(self.proc.returncode, self.cmd, self.cwd)
 
     def schedule_ngen_stoppage(self) -> None:
@@ -309,7 +315,7 @@ class ForecastExecutionManager:
         To interrupt execution: call self.schedule_ngen_stoppage().
         To start a new output log file for the subprocess' stdout+stderr: use "w" instead of default "a+" for log_file_open_mode.
         """
-        logger.info(Payload(status=Status.STARTING))
+        logger.info(Payload(status=Status.STARTING, modnm=MODNM))
         if self._status != RunStatus.PREPROCESSED:
             raise RuntimeError(f"Invalid self._status: {self._status} (expected {RunStatus.PREPROCESSED})")
         if log_file_open_mode not in ("a+", "w"):
@@ -336,7 +342,7 @@ class ForecastExecutionManager:
         logger.info(f"Starting ngen via cmd: {self.cmd} from cwd: {self.cwd}")
         self.proc = subprocess.Popen(self.cmd, stdout=self.log_handle, stderr=self.log_handle, shell=True, cwd=self.cwd)
         self._status = RunStatus.EXECUTION_RUNNING
-        logger.info(Payload(status=Status.INPROG))
+        logger.info(Payload(status=Status.INPROG, modnm=MODNM))
 
         if wait:
             poll_freq_seconds = 2
@@ -356,7 +362,9 @@ class ForecastExecutionManager:
     def postprocess(self, suppress_output: bool = False) -> None:
         """Postprocess results after ngen finishes running."""
         # TODO could assert that certain csv and nc files exist and are non-empty
-        logger.info(Payload(status=Status.INPROG, msg="starting postprocess"))
+        logger.info(
+            Payload(status=Status.INPROG, msg="starting postprocess", modnm=MODNM)
+        )
         if self._status != RunStatus.EXECUTION_SUCCESS:
             raise RuntimeError(f"Invalid self._status: {self._status} (expected {RunStatus.EXECUTION_SUCCESS})")
 
@@ -392,7 +400,9 @@ class ForecastExecutionManager:
             logger.info(f"Fcst-mgr NGEN run outputs saved at: {run_output_dir}")
 
         self._status = RunStatus.POSTPROCESSED
-        logger.info(Payload(status=Status.COMPLETE, msg="finished postprocess"))
+        logger.info(
+            Payload(status=Status.COMPLETE, msg="finished postprocess", modnm=MODNM)
+        )
 
 
 def search_for_partition_config(realization_file: str) -> str:
