@@ -336,11 +336,11 @@ class ForecastExecutionManager:
             realization_config_path=self.real_path,
             partition_config_path=self.partition_file,
         )
-        self.cmd = ngen_cli.ngen_cmd(as_string=True)
+        self.cmd = ngen_cli.ngen_cmd(as_string=False)
 
         self.cwd = str(self.out_dir)
         logger.info(f"Starting ngen via cmd: {self.cmd} from cwd: {self.cwd}")
-        self.proc = subprocess.Popen(self.cmd, stdout=self.log_handle, stderr=self.log_handle, shell=True, cwd=self.cwd)
+        self.proc = subprocess.Popen(self.cmd, stdout=self.log_handle, stderr=self.log_handle, shell=False, cwd=self.cwd)
         self._status = RunStatus.EXECUTION_RUNNING
         logger.info(Payload(status=Status.INPROG, modnm=MODNM))
 
