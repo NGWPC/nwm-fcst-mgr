@@ -7,6 +7,7 @@ import shutil
 import signal
 import subprocess
 import sys
+import threading
 import time
 from datetime import datetime, timedelta
 from enum import Enum, auto
@@ -95,6 +96,9 @@ class RunStatus(Enum):
 class ForecastExecutionManager:
     """Context manager for executing forecast via asynchronous ngen call.
 
+    Handles SIGINT and SIGTERM signals (stopping ngen subprocess before quitting).
+    May only be instantiated by the main thread.
+
     To run asynchronously, use wait=False during call to execute().
     To halt execution, either exit the context manager, or call schedule_ngen_stoppage().
 
@@ -117,7 +121,14 @@ class ForecastExecutionManager:
         config_cache: ConfigCache = None,
         partition_file: str | None = None,
     ):
+        if threading.current_thread() is not threading.main_thread():
+            raise RuntimeError(
+                f"ForecastExecutionManager was attempted to be initialized in a non-main thread, {threading.current_thread().name}, which is not allowed due to its signal handling."
+            )
+
+        self._prev_handler_sigterm = signal.signal(signal.SIGTERM, self._handler_sigterm)
         self._status = RunStatus.NOSTATUS
+
         self.real_path = real_path
 
         global logger
@@ -148,6 +159,10 @@ class ForecastExecutionManager:
         self._stop_ngen_flag = False
 
         logger.info(Payload(status=Status.INITTED, modnm=MODNM))
+
+    def _handler_sigterm(self, sig, frame):
+        logger.info(f"Handling signal: {sig}")
+        self.close()
 
     @property
     def out_dir(self) -> Path:
@@ -182,8 +197,14 @@ class ForecastExecutionManager:
         self.close()
 
     def close(self):
+        # Reset the SIGTERM handler to prevent infite loops.
+        if hasattr(self, '_prev_handler_sigterm'):
+            signal.signal(signal.SIGTERM, self._prev_handler_sigterm)
+            del self._prev_handler_sigterm
+        # Noop if close has already been called.
         if hasattr(self, "__closed") and self.__closed:
             return
+        # Stop ngen and close the log handle.
         try:
             self._stop_ngen()
         finally:
@@ -258,6 +279,7 @@ class ForecastExecutionManager:
             time.sleep(0.5)
 
         self._status = RunStatus.EXECUTION_STOPPED
+        logger.info("ngen stopped.")
         raise NgenIntentionallyStoppedError(self.proc.returncode, self.cmd, self.cwd)
 
     def _check_process_returncode(self) -> None:
