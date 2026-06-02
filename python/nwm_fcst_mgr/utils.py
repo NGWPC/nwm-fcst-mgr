@@ -59,7 +59,7 @@ def create_timestamp(date_only: bool = False, iso: bool = False, append_ms: bool
     else:
         return ts_base
 
-def initialize_logger(log_path: str | None = None, log_id: str | None = None) -> ewts.EwtsLogger:
+def initialize_logger(log_path: str | None = None, log_id: str | None = None) -> tuple[ewts.EwtsLogger, Path]:
     '''
     Set up logger.
 
@@ -72,7 +72,8 @@ def initialize_logger(log_path: str | None = None, log_id: str | None = None) ->
     -------
     ewts.EwtsLogger
         Instance of the EWTS logger.
-    
+    Path
+        The resolved log *file* path (not log *dir*)
     '''
 
     if log_path is not None:
@@ -101,6 +102,6 @@ def initialize_logger(log_path: str | None = None, log_id: str | None = None) ->
         running_in_ngen=False,
         enabled=True,
         bind_now=True,
-    )
+    ), (log_file_dir / log_file_name)
 
 

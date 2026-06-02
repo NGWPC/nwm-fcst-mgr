@@ -1,28 +1,41 @@
-from enum import Enum, auto
+import argparse
+import configparser
 import glob
 import json
-import logging
 import os
 import shutil
 import signal
 import subprocess
+import sys
+import threading
 import time
-from pathlib import Path
-import geopandas as gpd
-import pandas as pd
-import netCDF4
-import configparser
 from datetime import datetime, timedelta
+from enum import Enum, auto
+from pathlib import Path
 
+import geopandas as gpd
 import matplotlib.pyplot as plt
+import netCDF4
+import pandas as pd
 import yaml
-import argparse
+from ewts import Payload, Status
+from ewts.modules import ModuleKey
+from mswm.manager import build_fcst
 
 from nwm_fcst_mgr.consts import PARTITION_CONFIG_FILE_NAME_SUFFIX
-from nwm_fcst_mgr.exceptions import NgenCalledProcessError, NgenIntentionallyStoppedError
+from nwm_fcst_mgr.exceptions import (
+    NgenCalledProcessError,
+    NgenIntentionallyStoppedError,
+)
 from nwm_fcst_mgr.ngen_cli import NgenCLI
-from nwm_fcst_mgr.utils import initialize_logger, set_os_env_key, OS_ENV_KEY_RESULTS_DIR, OS_ENV_KEY_NGEN_LOG_FILE_PREFIX
-from mswm.manager import build_fcst
+from nwm_fcst_mgr.utils import (
+    OS_ENV_KEY_NGEN_LOG_FILE_PREFIX,
+    OS_ENV_KEY_RESULTS_DIR,
+    initialize_logger,
+    set_os_env_key,
+)
+
+MODNM = ModuleKey.FCST_MGR.value
 
 # Set valid cycle hours for each forecast configuration
 VALID_CYCLE_HOURS = {
@@ -35,21 +48,39 @@ VALID_CYCLE_HOURS = {
 }
 
 # setup the logger
-logger = initialize_logger()
+logger, _ = initialize_logger()
+
 
 class ConfigCache:
     """
     Cache for validation config and extracted values that are shared across multiple forecast runs
+    Supports two modes:
+        no_valid=False: (default) loads config from a valid_yaml file (validation-based workflow)
+        no_valid=True: loads gpkg and ngen_exe paths directly from run_dir (default/regionalization)
     """
-    def __init__(self, valid_yaml: str):
-        self.valid_yaml = valid_yaml
-        self.valid_config = load_yaml(valid_yaml)
-        logger.info(f"Validation file loaded from: {valid_yaml}")
+    def __init__(self, valid_yaml: str = None, run_dir: str = None, no_valid: bool = False):
+        self.no_valid = no_valid
 
-        # Extract and validate config values once
-        self.gpkg_cats, self.gpkg_nexus, self.ngen_exe, self.gage0 = extract_config(
-            self.valid_config, self.valid_yaml
-        )
+        if not no_valid:
+            if valid_yaml is None:
+                msg = "valid_yaml must be provided when no_valid=True"
+                logger.critical(msg)
+                raise ValueError(msg)
+            self.valid_yaml = valid_yaml
+            self.valid_config = load_yaml(valid_yaml)
+            logger.info(f"Validation file loaded from: {valid_yaml}")
+            self.gpkg_cats, self.gpkg_nexus, self.ngen_exe, self.gage0 = extract_config(
+                self.valid_config, self.valid_yaml
+            )
+        else:
+            if run_dir is None:
+                msg = "run_dir must be provided when novalid=True"
+                logger.critical(msg)
+                raise ValueError(msg)
+            self.valid_yaml = None
+            self.valid_config = None
+            self.gage0 = None
+            self.gpkg_cats, self.gpkg_nexus, self.ngen_exe = extract_config_from_run_dir(run_dir)
 
 
 class RunStatus(Enum):
@@ -63,32 +94,53 @@ class RunStatus(Enum):
 
 
 class ForecastExecutionManager:
-    """
-    Context manager for executing forecast via asynchronous ngen call.
+    """Context manager for executing forecast via asynchronous ngen call.
+
+    Handles SIGINT and SIGTERM signals (stopping ngen subprocess before quitting).
+    May only be instantiated by the main thread.
+
     To run asynchronously, use wait=False during call to execute().
     To halt execution, either exit the context manager, or call schedule_ngen_stoppage().
 
-    partition_file: (optional) path to partition configuration file.
-        If provided, the work will be divided among n processors where n in the number of partitions in this file.
+    ``fcst_mgr_log_file_path`` is the log file of this module.
+    ``ngen_proc_stdout_stderr_log_file_path`` is from the subprocess call to the ``ngen`` executable.
+
+    Parameters
+    ----------
+    real_path : str 
+        Path to existing realization file
+    config_cache : ConfigCache
+        Instance of ConfigCache
+    partition_file : str, optional
+        Path to partition configuration file. If provided, the work will be divided among n processors where n is the number of partitions in this file.
     """
 
     def __init__(
         self,
-        valid_yaml: str,
         real_path: str,
         config_cache: ConfigCache = None,
         partition_file: str | None = None,
     ):
+        if threading.current_thread() is not threading.main_thread():
+            raise RuntimeError(
+                f"ForecastExecutionManager was attempted to be initialized in a non-main thread, {threading.current_thread().name}, which is not allowed due to its signal handling."
+            )
+
+        self._prev_handler_sigterm = signal.signal(signal.SIGTERM, self._handler_sigterm)
         self._status = RunStatus.NOSTATUS
 
-        self.valid_yaml = valid_yaml
         self.real_path = real_path
+
+        global logger
+        logger, self.fcst_mgr_log_file_path = initialize_logger(str(self.out_dir), self.out_dir.name)
+        logger.info(Payload(status=Status.INITTING, modnm=MODNM))
+        self.ngen_proc_stdout_stderr_log_file_path = self.out_dir / f"{self.out_dir.name}_ngen_stdout_stderr.log"
+
         self.config_cache = config_cache
         self.partition_file = partition_file
 
         # Set from config_cache or preprocess)
         self.valid_config = None
-        self.out_dir = None
         self.gpkg_cats = None
         self.gpkg_nexus = None
         self.ngen_exe = None
@@ -105,6 +157,20 @@ class ForecastExecutionManager:
 
         # If set to True, then the ngen proc will be sent a SIGTERM
         self._stop_ngen_flag = False
+
+        logger.info(Payload(status=Status.INITTED, modnm=MODNM))
+
+    def _handler_sigterm(self, sig, frame):
+        logger.info(f"Handling signal: {sig}")
+        self.close()
+
+    @property
+    def out_dir(self) -> Path:
+        return Path(self.real_path).parent
+
+    @property
+    def log_dir_path(self) -> str:
+        return os.path.join(str(self.out_dir), self.out_dir.name)
 
     def __enter__(self):
         return self
@@ -127,11 +193,33 @@ class ForecastExecutionManager:
             else:
                 raise e
 
+    def __del__(self):
+        self.close()
+
     def close(self):
+        # Reset the SIGTERM handler to prevent infite loops.
+        if hasattr(self, '_prev_handler_sigterm'):
+            signal.signal(signal.SIGTERM, self._prev_handler_sigterm)
+            del self._prev_handler_sigterm
+        # Noop if close has already been called.
+        if hasattr(self, "__closed") and self.__closed:
+            return
+        # Stop ngen and close the log handle.
         try:
             self._stop_ngen()
         finally:
             self._close_log()
+            self.__closed = True
+            if logger is not None:
+                # If there is an unhandled exception, log an error payload.
+                if sys.exc_info()[0] is not None:
+                    logger.info(
+                        Payload(
+                            status=Status.ERROR,
+                            msg=f"Unhandled exception in ForecastExecutionManager: {sys.exc_info()[1]}",
+                            modnm=MODNM,
+                        )
+                    )
 
     def _close_log(self):
         if self.log_handle is not None:
@@ -172,7 +260,7 @@ class ForecastExecutionManager:
             raise RuntimeError("self.proc not initialized")
 
         logger.info("Intentionally stopping ngen...")
-        stop_timeout_sec = 5
+        stop_timeout_sec = 10
         signal_to_send = signal.SIGTERM
         deadline = time.perf_counter() + stop_timeout_sec
 
@@ -191,6 +279,7 @@ class ForecastExecutionManager:
             time.sleep(0.5)
 
         self._status = RunStatus.EXECUTION_STOPPED
+        logger.info("ngen stopped.")
         raise NgenIntentionallyStoppedError(self.proc.returncode, self.cmd, self.cwd)
 
     def _check_process_returncode(self) -> None:
@@ -203,12 +292,13 @@ class ForecastExecutionManager:
                 pass
             case 0:
                 self._status = RunStatus.EXECUTION_SUCCESS
-                logger.info("NGEN run completed successfully")
+                logger.info(
+                    Payload(status=Status.COMPLETE, msg="ngen completed", modnm=MODNM)
+                )
             case _:
                 self._status = RunStatus.EXECUTION_FAILED
-                logger.critical(
-                    f"Ngen run failed with return code {self.proc.returncode}. Command: {self.cmd}. Cwd: {self.cwd}"
-                )
+                msg = f"Ngen run failed with return code {self.proc.returncode}. Command: {self.cmd}. Cwd: {self.cwd}"
+                logger.critical(Payload(status=Status.ERROR, msg=msg, modnm=MODNM))
                 raise NgenCalledProcessError(self.proc.returncode, self.cmd, self.cwd)
 
     def schedule_ngen_stoppage(self) -> None:
@@ -232,13 +322,6 @@ class ForecastExecutionManager:
         self.ngen_exe = self.config_cache.ngen_exe
         self.gage0 = self.config_cache.gage0
 
-        # Retrieve output_dir
-        real_file = Path(self.real_path)
-        self.out_dir = real_file.parent
-
-        global logger
-        logger = initialize_logger(str(self.out_dir), self.out_dir.name)
-
         # set environment variable for ngencerf backend
         set_os_env_key(
             OS_ENV_KEY_RESULTS_DIR, str(self.out_dir), override=False
@@ -254,6 +337,7 @@ class ForecastExecutionManager:
         To interrupt execution: call self.schedule_ngen_stoppage().
         To start a new output log file for the subprocess' stdout+stderr: use "w" instead of default "a+" for log_file_open_mode.
         """
+        logger.info(Payload(status=Status.STARTING, modnm=MODNM))
         if self._status != RunStatus.PREPROCESSED:
             raise RuntimeError(f"Invalid self._status: {self._status} (expected {RunStatus.PREPROCESSED})")
         if log_file_open_mode not in ("a+", "w"):
@@ -261,11 +345,9 @@ class ForecastExecutionManager:
 
         logger.info(f"Initializing NGEN run from:  {self.real_path}")
 
-        # kick off ngen run and save stdout & stderr to ngen_stdout_stderr.log
-        log_file = self.out_dir / f"{self.out_dir.name}_ngen_stdout_stderr.log"
-
-        logger.info(f"Opening log file using mode {repr(log_file_open_mode)}: {log_file}")
-        self.log_handle = open(log_file, log_file_open_mode)
+        # Kick off ngen run and save stdout & stderr to ngen_stdout_stderr.log
+        logger.info(f"Opening log file using mode {repr(log_file_open_mode)}: {self.ngen_proc_stdout_stderr_log_file_path}")
+        self.log_handle = open(self.ngen_proc_stdout_stderr_log_file_path, log_file_open_mode)
 
         ngen_cli = NgenCLI(
             ngen_path=self.ngen_exe,
@@ -276,12 +358,13 @@ class ForecastExecutionManager:
             realization_config_path=self.real_path,
             partition_config_path=self.partition_file,
         )
-        self.cmd = ngen_cli.ngen_cmd(as_string=True)
+        self.cmd = ngen_cli.ngen_cmd(as_string=False)
 
         self.cwd = str(self.out_dir)
         logger.info(f"Starting ngen via cmd: {self.cmd} from cwd: {self.cwd}")
-        self.proc = subprocess.Popen(self.cmd, stdout=self.log_handle, stderr=self.log_handle, shell=True, cwd=self.cwd)
+        self.proc = subprocess.Popen(self.cmd, stdout=self.log_handle, stderr=self.log_handle, shell=False, cwd=self.cwd)
         self._status = RunStatus.EXECUTION_RUNNING
+        logger.info(Payload(status=Status.INPROG, modnm=MODNM))
 
         if wait:
             poll_freq_seconds = 2
@@ -293,7 +376,6 @@ class ForecastExecutionManager:
                     break
                 logger.debug(f"ngen has been running for {(time.perf_counter() - start):.1f} seconds...")
                 time.sleep(poll_freq_seconds)
-            logger.info(f"ngen finished after {(time.perf_counter() - start):.1f} seconds")
             self._close_log()
 
         else:
@@ -302,7 +384,9 @@ class ForecastExecutionManager:
     def postprocess(self, suppress_output: bool = False) -> None:
         """Postprocess results after ngen finishes running."""
         # TODO could assert that certain csv and nc files exist and are non-empty
-
+        logger.info(
+            Payload(status=Status.INPROG, msg="starting postprocess", modnm=MODNM)
+        )
         if self._status != RunStatus.EXECUTION_SUCCESS:
             raise RuntimeError(f"Invalid self._status: {self._status} (expected {RunStatus.EXECUTION_SUCCESS})")
 
@@ -338,6 +422,9 @@ class ForecastExecutionManager:
             logger.info(f"Fcst-mgr NGEN run outputs saved at: {run_output_dir}")
 
         self._status = RunStatus.POSTPROCESSED
+        logger.info(
+            Payload(status=Status.COMPLETE, msg="finished postprocess", modnm=MODNM)
+        )
 
 
 def search_for_partition_config(realization_file: str) -> str:
@@ -361,7 +448,6 @@ def search_for_partition_config(realization_file: str) -> str:
 
 
 def run_workflow(
-    valid_yaml: str,
     real_path: str,
     config_cache: ConfigCache,
     suppress_output: bool = False,
@@ -369,7 +455,6 @@ def run_workflow(
 ):
     """
     Execute ngen run workflow for forecast period and cold start period (if provided)
-    valid_yaml: path to validation yaml file from past calibration run
     real_path: path to realization file for a cold start or forecast period
     config_cache: ConfigCache containing pre-loaded config and extracted values
     suppress_output: suppress postprocess output of plot and csv of streamflow
@@ -377,7 +462,6 @@ def run_workflow(
         If provided, the work will be divided among n processors where n in the number of partitions in this file.
     """
     with ForecastExecutionManager(
-        valid_yaml,
         real_path,
         config_cache,
         partition_file,
@@ -448,7 +532,9 @@ def load_yaml(file_path: str) -> dict:
 
 
 def extract_config(valid_config: dict, valid_yaml: str) -> tuple:
-    """ Extract and validate static config values from loaded config file"""
+    """
+    Extract and validate static config values from loaded config file
+    """
     # Retrieve hydrofabric gpkg
     gpkg_cats = valid_config["model"]["catchments"]
     gpkg_nexus = valid_config["model"]["nexus"]
@@ -470,6 +556,62 @@ def extract_config(valid_config: dict, valid_yaml: str) -> tuple:
             raise
 
     return gpkg_cats, gpkg_nexus, ngen_exe, gage0
+
+
+def extract_config_from_run_dir(run_dir: str) -> tuple:
+    """
+    Extract gpkg and ngen executable paths from an existing default or regionalization run directory
+
+    Parameters
+    ----------
+    run_dir: str
+        Path to the existing run directory
+
+    Returns
+    ---------
+    gpkg_cats, gpkg_nexus, ngen_exe
+    """
+    input_dir = Path(run_dir) / "Input"
+
+    # Find gpkg file
+    gpkg_files = list(input_dir.glob("*.gpkg"))
+    if not gpkg_files:
+        msg = f"Geopackage file not found in run directory: {input_dir}"
+        logger.critical(msg)
+        raise FileNotFoundError(msg)
+    gpkg = str(gpkg_files[0])
+
+    # Find ngen executable
+    ngen_exe = str(input_dir / "ngen")
+    if not Path(ngen_exe).exists():
+        msg = f"ngen executable not found in run directory: {input_dir}"
+        logger.critical(msg)
+        raise FileNotFoundError(msg)
+
+    return gpkg, gpkg, ngen_exe
+
+
+def _get_run_type_from_config(input_path: str) -> str:
+    """
+    Read run_type from the [General] section of an input.config file
+
+    Parameters
+    ----------
+    input_path: str
+        Path to input.config file
+
+    Returns
+    ---------
+    run_type string
+    """
+    config = load_config(input_path)
+    try:
+        run_type = config["General"]["run_type"]
+    except KeyError as e:
+        msg = f"run_type not found in [General] section of input.config: {e}"
+        logger.critical(msg)
+        raise KeyError(msg)
+    return run_type
 
 
 def read_troute_output(
@@ -584,27 +726,45 @@ def check_hind_intervals(input_path: str, hind_interval: list) -> None:
             raise ValueError(msg)
 
 
-def run_forecast(valid_yaml, real_path, partition_file: str | None = None):
+def run_forecast(
+    real_path: str,
+    valid_yaml: str = None,
+    no_valid: bool = False,
+    partition_file: str | None = None
+):
     """
     Run forecast workflow with optional cold start run
 
     Parameters
     ---------
-    input_path : str
-        Path to input.config file for hindcast
+    real_path : str
+        Path to realization file for forecast
     valid_yaml : str
         Path to validation yaml file from previous run of nwm-cal-mgr
+    no_valid : bool
+        If False (default), use validation-based workflow. If True, use default/regionalzation workflow
     partition_file : str | None (optional) path to partition configuration file.
         If provided, the work will be divided among n processors where n in the number of partitions in this file.
         TODO add multiprocessing support to run_hindcast and run_lagged_ensemble.
     """
-    logger.info(f'Initializing forecast run from: {valid_yaml}')
+    logger.info(f'Initializing forecast run (no_valid={no_valid})')
 
-    # Load config and extract once per workflow
-    config_cache = ConfigCache(valid_yaml)
+    if not no_valid:
+        if valid_yaml is None:
+            msg = "valid_yaml must be provided when no_valid=False"
+            logger.critical(msg)
+            raise ValueError(msg)
+        config_cache = ConfigCache(valid_yaml=valid_yaml, no_valid=False)
+    else:
+        if not Path(real_path).is_file():
+            msg = f"Realization file does not exist: {real_path}"
+            logger.critical(msg)
+            raise FileNotFoundError(msg)
+        run_dir = str(Path(real_path).parent)
+        config_cache = ConfigCache(run_dir=run_dir, no_valid=True)
 
     # Run forecast or cold start, depending on provided realization path
-    run_workflow(valid_yaml, real_path, config_cache, partition_file=partition_file)
+    run_workflow(real_path, config_cache, suppress_output=no_valid, partition_file=partition_file)
     logger.info("Ngen run completed")
 
 
@@ -632,8 +792,13 @@ def run_hindcast(input_path, valid_yaml, fcst_run_name, cycle_interval, num_iter
     """
     logger.info(f'Initializing hindcast runs from: {valid_yaml}')
 
+    if valid_yaml is None:
+        msg = "valid_yaml must be provided for hindcast run"
+        logger.critical(msg)
+        raise ValueError(msg)
+
     # Load config and extract once per workflow
-    config_cache = ConfigCache(valid_yaml)
+    config_cache = ConfigCache(valid_yaml=valid_yaml, no_valid=False)
 
     # Generate hindcast interval times in hours
     hind_interval = list(range(0, num_iterations * cycle_interval, cycle_interval))
@@ -665,7 +830,7 @@ def run_hindcast(input_path, valid_yaml, fcst_run_name, cycle_interval, num_iter
             logger.info(f"Warm start realization file for hindcast iteration at {hind_cycle} hours written to: {warm_start_real_path}")
 
             # Execute warm start ngen run to generate hindcasting model states
-            run_workflow(valid_yaml, warm_start_real_path, config_cache, suppress_output=True)
+            run_workflow(warm_start_real_path, config_cache, suppress_output=True)
             logger.info(f"Warm start run for hindcast iteration at {hind_cycle} hours completed")
             logger.info(f"Warm start state saved to {warm_start_state}")
 
@@ -693,84 +858,15 @@ def run_hindcast(input_path, valid_yaml, fcst_run_name, cycle_interval, num_iter
             hind_kwargs['load_state_from'] = warm_start_state
             logger.info(f"Hindcast iteration at {hind_cycle} hours loading state from: {warm_start_state}")
 
-        hind_real_path = build_fcst(**hind_kwargs)
+        hind_real_path, _ = build_fcst(**hind_kwargs)
         logger.info(f"Hindcast realization file for iteration at {hind_cycle} hours written to: {hind_real_path}")
 
         # Run hindcasting period
-        run_workflow(valid_yaml, hind_real_path, config_cache)
+        run_workflow(hind_real_path, config_cache)
         logger.info(f"Hindcast run for iteration at {hind_cycle} hours completed")
 
         # Store previous hindcast cycle value to set next warm start duration
         prev_hind_cycle = hind_cycle
-
-
-def run_lagged_ensemble(input_path, valid_yaml, fcst_run_name, open_loop_state=None, closed_loop_state=None):
-    """
-    Run lagged ensemble workflow, loading from open and closed loop AnA states
-
-    Parameters
-    ---------
-    input_path : str
-        Path to input.config file for hindcast
-    valid_yaml : str
-        Path to validation yaml file from previous run of nwm-cal-mgr
-    fcst_run_name : str
-        Name of the folder to be created for storing inputs/outputs for hindcast
-    open_loop_state : str, optional
-        Path to directory containing open loop AnA state files to initialize no DA member
-    closed_loop_state : str, optional
-        Path to directory containing closed loop AnA state files to initialize all other members
-    """
-    logger.info(f'Initializing lagged ensemble runs from: {valid_yaml}')
-
-    # Load config and extract once per workflow
-    config_cache = ConfigCache(valid_yaml)
-
-    # Set list of medium range lagged ensemble runs and hours of forcing lag
-    ens_members = {
-        'no_da': 0,
-        'mem1': 0,
-        'mem2': 6,
-        'mem3': 12,
-        'mem4': 18,
-        'mem5': 24,
-        'mem6': 30
-    }
-
-    # Loop through lagged ensemble members
-    for member, lag in ens_members.items():
-
-        logger.info(f"Initializing lagged ensemble run for medium range {member}")
-
-        # Set lagged ensemble kwargs
-        lag_ens_kwargs = {
-            'input_path': input_path,
-            'valid_yaml': valid_yaml,
-            'fcst_run_name': fcst_run_name,
-            'use_lagged_ens': True,
-            'lagged_ens_mem': member,
-            'forcing_lag': lag
-        }
-
-        logger.info(f"Initializing lagged ensemble run for {member} member")
-
-        # Load open loop AnA run state for no_da member, load closed loop AnA run state for all other members
-        if member == "no_da":
-            if open_loop_state is not None:
-                lag_ens_kwargs['load_state_from'] = open_loop_state
-                logger.info(f"Lagged ensember {member} member initialized with open loop state: {open_loop_state}")
-        else:
-            if closed_loop_state is not None:
-                lag_ens_kwargs['load_state_from'] = closed_loop_state
-                logger.info(f"Lagged ensember {member} member initialized with closed loop state: {closed_loop_state}")
-
-        # Create lagged ensemble member input files
-        member_real_path = build_fcst(**lag_ens_kwargs)
-        logger.info(f"Lagged ensemble {member} member realization file written to: {member_real_path}")
-
-        # Run hindcasting period
-        run_workflow(valid_yaml, member_real_path, config_cache)
-        logger.info(f"Lagged ensemble {member} member run completed")
 
 
 def parse_args():
@@ -781,11 +877,12 @@ def parse_args():
 
     # Define parent parser for shared arguments
     parent_parser = argparse.ArgumentParser(add_help=False)
-    parent_parser.add_argument('valid_yaml', type=str, help='Path to validation yaml file from previous run of nwm-cal-mgr')
+    parent_parser.add_argument('--valid_yaml', type=str, default=None, help='Path to validation yaml file from previous run of nwm-cal-mgr')
 
     # Subcommand: forecast_workflow
     forecast_workflow_sub = subparser.add_parser("run_forecast", parents=[parent_parser], help="Run forecast workflow")
     forecast_workflow_sub.add_argument('real_path', type=str, help='Path to cold start or forecast period realization file')
+    forecast_workflow_sub.add_argument('--no_valid', action="store_true", default=False, help='Use workflow without validation run (default=False)')
 
     # Subcommand: hindcast_workflow
     hindcast_workflow_sub = subparser.add_parser("run_hindcast", parents=[parent_parser], help="Run hindcast workflow")
@@ -794,13 +891,6 @@ def parse_args():
     hindcast_workflow_sub.add_argument("cycle_interval", type=int, help="Cycle interval (in hours) between hindcast runs")
     hindcast_workflow_sub.add_argument("num_iterations", type=int, help="Number of hindcast cycles to perform")
     hindcast_workflow_sub.add_argument("--cold_start_state", type=str, default=None, help="Path to directory containing cold start state files")
-
-    # Subcommand: lagged_ensembles_workflow
-    lagged_ens_workflow_sub = subparser.add_parser("run_lagged_ens", parents=[parent_parser], help="Run lagged ensembles workflow")
-    lagged_ens_workflow_sub.add_argument('input_path', type=str, help='Path to input.config file for forecast')
-    lagged_ens_workflow_sub.add_argument("fcst_run_name", help="Name of the folder to be created for storing inputs/outputs from running ngen")
-    lagged_ens_workflow_sub.add_argument("--open_loop_state", type=str, default=None, help="Path to directory containing open loop ana state files")
-    lagged_ens_workflow_sub.add_argument("--closed_loop_state", type=str, default=None, help="Path to directory containing closed loop ana state files")
 
     return parser.parse_args()
 
@@ -812,17 +902,13 @@ def main():
 
     # Run fcst/hindcast workflows
     if args.command == "run_forecast":
-        run_forecast(valid_yaml=args.valid_yaml, real_path=args.real_path)
+        run_forecast(real_path=args.real_path, valid_yaml=args.valid_yaml, no_valid=args.no_valid)
     elif args.command == "run_hindcast":
         run_hindcast(valid_yaml=args.valid_yaml, input_path=args.input_path,
                      fcst_run_name=args.fcst_run_name, cycle_interval=args.cycle_interval,
                      num_iterations=args.num_iterations, cold_start_state=args.cold_start_state)
-    elif args.command == "run_lagged_ens":
-        run_lagged_ensemble(valid_yaml=args.valid_yaml, input_path=args.input_path,
-                            fcst_run_name=args.fcst_run_name, open_loop_state=args.open_loop_state,
-                            closed_loop_state=args.closed_loop_state)
     else:
-        raise ValueError(f"Unexpected command: {args.command}. Use either 'run_forecast', 'run_hindcast', or 'run_lagged_ens'.")
+        raise ValueError(f"Unexpected command: {args.command}. Use either 'run_forecast', o r'run_hindcast'")
 
 
 if __name__ == "__main__":
