@@ -24,13 +24,13 @@ show_help() {
   echo "  hindcast    Run hindcast script."
   echo ""
   echo "FORECAST:"
-  echo "  $(basename "$0") forecast <validation_yaml> <forecast_realization> [stdout_file]"
+  echo "  $(basename "$0") forecast --valid_yaml <validation_yaml> <forecast_realization> [stdout_file]"
   echo ""
   echo "COLD_START:"
-  echo "  $(basename "$0") cold_start <validation_yaml> <cold_start_realization> [stdout_file]"
+  echo "  $(basename "$0") cold_start --valid_yaml <validation_yaml> <cold_start_realization> [stdout_file]"
   echo ""
   echo "HINDCAST:"
-  echo "  $(basename "$0") hindcast <validation_yaml> <input_config> <my_hindcast_run> <interval_cycle> <num_iterations> [cold_start_state] [stdout_file]"
+  echo "  $(basename "$0") hindcast --valid_yaml <validation_yaml> <input_config> <my_hindcast_run> <interval_cycle> <num_iterations> [cold_start_state] [stdout_file]"
   echo ""
   echo "VALIDATION_YAML: Path to the config yaml file for a validation run."
   echo "FORECAST_REALIZATION: Required for forecast. Path to the forecast realization file."
@@ -43,11 +43,11 @@ show_help() {
   echo "STDOUT_FILE: Optional path where script console output will be saved."
   echo ""
   echo "Examples:"
-  echo "  $(basename "$0") forecast validation.yaml realization.yaml"
-  echo "  $(basename "$0") cold_start validation.yaml cold_start_realization.yaml"
-  echo "  $(basename "$0") hindcast validation.yaml input.config hindcast_5 3 10"
-  echo "  $(basename "$0") hindcast validation.yaml input.config hindcast_5 3 10 /path/to/cold_start_state"
-  echo "  $(basename "$0") hindcast validation.yaml input.config hindcast_5 3 10 /path/to/cold_start_state /path/to/output.log"
+  echo "  $(basename "$0") forecast --valid_yaml validation.yaml realization.yaml"
+  echo "  $(basename "$0") cold_start --valid_yaml validation.yaml cold_start_realization.yaml"
+  echo "  $(basename "$0") hindcast --valid_yaml validation.yaml input.config hindcast_5 3 10"
+  echo "  $(basename "$0") hindcast --valid_yaml validation.yaml input.config hindcast_5 3 10 /path/to/cold_start_state"
+  echo "  $(basename "$0") hindcast --valid_yaml validation.yaml input.config hindcast_5 3 10 /path/to/cold_start_state /path/to/output.log"
   echo ""
   exit 1
 }
@@ -168,7 +168,7 @@ if [ "$SCRIPT_COMMAND" == "hindcast" ]; then
 
   HINDCAST_ARGS=(
     -m "$SCRIPT_MODULE" "$SUBCOMMAND"
-    "$VALIDATION_YAML"
+    --valid_yaml "$VALIDATION_YAML"
     "$INPUT_CONFIG"
     "$MY_HINDCAST_RUN"
     "$INTERVAL_CYCLE"
@@ -189,9 +189,9 @@ else
   echo "$LOG_PREFIX Running $SCRIPT_MODULE $SUBCOMMAND with inputs: $VALIDATION_YAML $REALIZATION_FILE"
 
   if [ -z "$STDOUT_FILE" ]; then
-    python -m "$SCRIPT_MODULE" "$SUBCOMMAND" "$VALIDATION_YAML" "$REALIZATION_FILE"
+    python -m "$SCRIPT_MODULE" "$SUBCOMMAND" --valid_yaml "$VALIDATION_YAML" "$REALIZATION_FILE"
   else
-    python -m "$SCRIPT_MODULE" "$SUBCOMMAND" "$VALIDATION_YAML" "$REALIZATION_FILE" > "$STDOUT_FILE" 2>&1
+    python -m "$SCRIPT_MODULE" "$SUBCOMMAND" --valid_yaml "$VALIDATION_YAML" "$REALIZATION_FILE" > "$STDOUT_FILE" 2>&1
   fi
 fi
 
