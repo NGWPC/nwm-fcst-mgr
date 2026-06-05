@@ -3,7 +3,7 @@
 ############################################################################
 # Change/Verify these values when adopting this Dockerfile into another org:
 #   GH_ORG, GHCR_ORG, IMAGE_NAMESPACE,
-#   EWTS_ORG, EWTS_REF, MSW_MGR_ORG, MSW_MGR_REF
+#   MSW_MGR_ORG, MSW_MGR_REF
 ############################################################################
 
 # Ownership / branding overrides
@@ -11,28 +11,25 @@ ARG GH_ORG=NGWPC
 ARG GHCR_ORG=ngwpc
 ARG IMAGE_NAMESPACE=ngwpc
 
-# External repository sources (org and ref/branch overrides)
-ARG EWTS_ORG=${GH_ORG}
-ARG EWTS_REF=development
+# External repository sources
 ARG MSW_MGR_ORG=${GH_ORG}
 ARG MSW_MGR_REF=development
+
+############################################################################
+# Image selection
 ############################################################################
 
-# Image selection
 ARG NGEN_IMAGE_TAG=latest
 ARG NGEN_IMAGE=ghcr.io/${GHCR_ORG}/ngen:${NGEN_IMAGE_TAG}
 FROM ${NGEN_IMAGE}
 
-# Uncomment when building ngen locally 
-#FROM ngen
+# Uncomment when building from a locally built ngen image
+# FROM ngen
 
 # Re-expose args after FROM for the remaining build stage
-# Keeps whatever value was already set
 ARG GH_ORG
 ARG GHCR_ORG
 ARG IMAGE_NAMESPACE
-ARG EWTS_ORG
-ARG EWTS_REF
 ARG MSW_MGR_ORG
 ARG MSW_MGR_REF
 
@@ -44,7 +41,6 @@ ARG IMAGE_SOURCE="unknown"
 ARG IMAGE_VENDOR="unknown"
 ARG IMAGE_VERSION="unknown"
 ARG IMAGE_REVISION="unknown"
-ARG EWTS_REVISION="unknown"
 ARG MSW_MGR_REVISION="unknown"
 
 # Image Labels: OCI-spec annotations followed by custom source-repo metadata.
@@ -57,19 +53,17 @@ LABEL org.opencontainers.image.base.name="${NGEN_IMAGE}" \
     org.opencontainers.image.title="NGEN Forecast/Hindcast Manager" \
     org.opencontainers.image.description="Docker image for the NGEN Forecast/Hindcast application" \
     io.${IMAGE_NAMESPACE}.image.base.revision="${BASE_IMAGE_REVISION}" \
-    io.${IMAGE_NAMESPACE}.ewts.org="${EWTS_ORG}" \
-    io.${IMAGE_NAMESPACE}.ewts.ref="${EWTS_REF}" \
-    io.${IMAGE_NAMESPACE}.ewts.revision="${EWTS_REVISION}" \
     io.${IMAGE_NAMESPACE}.msw.mgr.org="${MSW_MGR_ORG}" \
     io.${IMAGE_NAMESPACE}.msw.mgr.ref="${MSW_MGR_REF}" \
     io.${IMAGE_NAMESPACE}.msw.mgr.revision="${MSW_MGR_REVISION}"
 
-# Activate the existing virtual environment
-ENV PATH="/ngen-app/ngen-python/bin:${PATH}"
-
-RUN set -eux; \
-    dnf install -y jq; \
-    dnf clean all
+# Re-expose the Python virtual environment inherited from ngen.
+# The dependency image creates the venv and the unversioned `python` symlink.
+# ngen-bmi-forcing and ngen install their Python packages into that venv.
+# forecast should reuse it rather than recreating it.
+ENV VIRTUAL_ENV="/ngen-app/ngen-python" \
+    PATH="${VIRTUAL_ENV}/bin:${PATH}" \
+    PYTHONPATH="${VIRTUAL_ENV}/lib/python3.11/site-packages:/usr/local/lib64/python3.11/site-packages:${PYTHONPATH}"
 
 COPY . /ngen-app/ngen-fcst/
 COPY ./docker/run-ngen-fcst.sh /ngen-app/bin/
@@ -79,55 +73,27 @@ RUN set -eux; \
 
 WORKDIR /ngen-app/ngen-fcst
 
-# Install missing dependencies that aren't in base image
-RUN --mount=type=cache,target=/root/.cache/pip,id=pip-cache \
+# Install forecast-specific Python dependencies not already provided by ngen.
+RUN --mount=type=cache,target=/root/.cache/pip,id=pip-cache-rocky \
     set -eux; \
-    pip3 install \
-        "matplotlib~=3.10.6"; \
-        #"geopandas~=1.1.1"; \
-    pip3 cache purge
+    python -m pip install "matplotlib~=3.10.6"; \
+    python -m pip cache purge
 
-# ── EWTS (Error, Warning and Trapping System)
-#
-# Build args – override at build time to pin a branch, tag, or full commit SHA:
-#   docker build --build-arg EWTS_REF=v1.2.3 ...
-#   docker build --build-arg EWTS_REF=abc123def456 ...
-
-ARG EWTS_CACHE_BUST=1
-
-# Clone nwm-ewts, install the Python package, capture git metadata for
-# provenance, then remove the source tree.
-# Try shallow clone by branch/tag name first; fall back to full clone + checkout
-# for bare commit SHAs (which git clone -b doesn't support).
-#
-# NOTE: Unlike the ngen Dockerfile, clone + pip install + cleanup are kept in a
-# single RUN so the source tree never persists in a layer.  In ngen the split is
-# safe because cmake installs the wheel to /opt/ewts before the source is removed;
-# here there is no cmake step, so the source must remain until pip finishes.
-RUN --mount=type=cache,target=/root/.cache/pip,id=pip-cache \
-    echo "EWTS cache bust: ${EWTS_CACHE_BUST}" && \
-    set -eux && \
-    ewts_dir="$(mktemp -d)" && \
-    git clone "https://github.com/${EWTS_ORG}/nwm-ewts.git" "${ewts_dir}" && \
-    cd "${ewts_dir}" && \
-    git checkout "${EWTS_REF}" && \
-    pip install "${ewts_dir}/runtime/python/ewts" && \
-    rm -rf "${ewts_dir}"
-
-# Install MSWM package
+# Install MSWM package from the configured repository/ref.
 ARG MSWM_CACHE_BUST=1
-RUN --mount=type=cache,target=/root/.cache/pip,id=pip-cache \
+RUN --mount=type=cache,target=/root/.cache/pip,id=pip-cache-rocky \
     set -eux; \
     echo "MSWM cache bust: ${MSWM_CACHE_BUST}" && \
-    pip3 install mswm@git+https://github.com/${MSW_MGR_ORG}/nwm-msw-mgr.git@${MSW_MGR_REF} ; \
-    pip3 cache purge
+    python -m pip install mswm@git+https://github.com/${MSW_MGR_ORG}/nwm-msw-mgr.git@${MSW_MGR_REF}; \
+    python -m pip cache purge
 
-# Install into the existing virtual environment without upgrading base packages
+# Install forecast manager into the inherited virtual environment.
 ARG FCST_CACHE_BUST=1
-RUN set -eux; \
+RUN --mount=type=cache,target=/root/.cache/pip,id=pip-cache-rocky \
+    set -eux; \
     echo "FCST cache bust: ${FCST_CACHE_BUST}" && \
-    pip3 install --no-deps . || pip3 install .; \
-    pip3 cache purge;
+    python -m pip install --no-deps . || python -m pip install .; \
+    python -m pip cache purge
 
 ARG CI_COMMIT_REF_NAME
 
