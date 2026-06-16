@@ -19,12 +19,23 @@ ARG MSW_MGR_REF=development
 # Image selection
 ############################################################################
 
-ARG NGEN_IMAGE_TAG=latest
-ARG NGEN_IMAGE=ghcr.io/${GHCR_ORG}/ngen:${NGEN_IMAGE_TAG}
-FROM ${NGEN_IMAGE}
+# Use the ngen image as the base.
+#
+# Default build:
+#   docker build -t ngen-fcst .
+#
+# Build from a different published ngen image:
+#   docker build \
+#     --build-arg NGEN_IMAGE=ghcr.io/ngwpc/ngen:development \
+#     -t ngen-fcst .
+#
+# Build from a locally built ngen image:
+#   docker build \
+#     --build-arg NGEN_IMAGE=ngen \
+#     -t ngen-fcst .
+ARG NGEN_IMAGE=ghcr.io/${GHCR_ORG}/ngen:latest
 
-# Uncomment when building from a locally built ngen image
-# FROM ngen
+FROM ${NGEN_IMAGE}
 
 # Re-expose args after FROM for the remaining build stage
 ARG GH_ORG
@@ -32,9 +43,11 @@ ARG GHCR_ORG
 ARG IMAGE_NAMESPACE
 ARG MSW_MGR_ORG
 ARG MSW_MGR_REF
+ARG NGEN_IMAGE
 
 # OCI Metadata Arguments
-ARG NGEN_IMAGE
+#
+# BASE_IMAGE_* refers to the ngen image this image is built FROM.
 ARG BASE_IMAGE_DIGEST="unknown"
 ARG BASE_IMAGE_REVISION="unknown"
 ARG IMAGE_SOURCE="unknown"
