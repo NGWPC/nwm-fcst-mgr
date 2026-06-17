@@ -101,7 +101,6 @@ def initialize_logger(log_path: str | None = None, log_id: str | None = None) ->
         log_file_name=log_file_name,
         running_in_ngen=False,
         enabled=True,
-        bind_now=True,
     ), (log_file_dir / log_file_name)
 
 
