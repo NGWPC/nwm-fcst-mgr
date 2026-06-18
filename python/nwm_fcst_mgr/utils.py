@@ -21,7 +21,7 @@ def set_os_env_key(key: str, val: str, override: bool = True) -> None:
             If True, then do replace the existing value of that key if it already exists.
             If False, then do not replace the value.
     """
-    LOG = ewts.get_logger(ewts.FCST_MGR_ID).get_bound_logger()
+    LOG = ewts.get_logger(ewts.FCST_MGR_ID)
 
     errors: list[Exception] = []
     if not isinstance(key, str):
@@ -101,7 +101,6 @@ def initialize_logger(log_path: str | None = None, log_id: str | None = None) ->
         log_file_name=log_file_name,
         running_in_ngen=False,
         enabled=True,
-        bind_now=True,
     ), (log_file_dir / log_file_name)
 
 

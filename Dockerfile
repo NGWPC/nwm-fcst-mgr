@@ -3,7 +3,7 @@
 ############################################################################
 # Change/Verify these values when adopting this Dockerfile into another org:
 #   GH_ORG, GHCR_ORG, IMAGE_NAMESPACE,
-#   MSW_MGR_ORG, MSW_MGR_REF
+#   MSW_MGR_ORG, MSW_MGR_REF, EWTS_ORG, EWTS_REF
 ############################################################################
 
 # Ownership / branding overrides
@@ -15,16 +15,33 @@ ARG IMAGE_NAMESPACE=ngwpc
 ARG MSW_MGR_ORG=${GH_ORG}
 ARG MSW_MGR_REF=development
 
+ARG EWTS_ORG=${GH_ORG}
+ARG EWTS_REF=development
+
+ARG FCST_MGR_INSTALL_EWTS=OFF
+ARG EWTS_CACHE_BUST=0
+
 ############################################################################
 # Image selection
 ############################################################################
 
-ARG NGEN_IMAGE_TAG=latest
-ARG NGEN_IMAGE=ghcr.io/${GHCR_ORG}/ngen:${NGEN_IMAGE_TAG}
-FROM ${NGEN_IMAGE}
+# Use the ngen image as the base.
+#
+# Default build:
+#   docker build -t ngen-fcst .
+#
+# Build from a different published ngen image:
+#   docker build \
+#     --build-arg NGEN_IMAGE=ghcr.io/ngwpc/ngen:development \
+#     -t ngen-fcst .
+#
+# Build from a locally built ngen image:
+#   docker build \
+#     --build-arg NGEN_IMAGE=ngen \
+#     -t ngen-fcst .
+ARG NGEN_IMAGE=ghcr.io/${GHCR_ORG}/ngen:latest
 
-# Uncomment when building from a locally built ngen image
-# FROM ngen
+FROM ${NGEN_IMAGE}
 
 # Re-expose args after FROM for the remaining build stage
 ARG GH_ORG
@@ -32,9 +49,15 @@ ARG GHCR_ORG
 ARG IMAGE_NAMESPACE
 ARG MSW_MGR_ORG
 ARG MSW_MGR_REF
+ARG EWTS_ORG
+ARG EWTS_REF
+ARG FCST_MGR_INSTALL_EWTS
+ARG EWTS_CACHE_BUST
+ARG NGEN_IMAGE
 
 # OCI Metadata Arguments
-ARG NGEN_IMAGE
+#
+# BASE_IMAGE_* refers to the ngen image this image is built FROM.
 ARG BASE_IMAGE_DIGEST="unknown"
 ARG BASE_IMAGE_REVISION="unknown"
 ARG IMAGE_SOURCE="unknown"
@@ -64,6 +87,37 @@ LABEL org.opencontainers.image.base.name="${NGEN_IMAGE}" \
 ENV VIRTUAL_ENV="/ngen-app/ngen-python" \
     PATH="${VIRTUAL_ENV}/bin:${PATH}" \
     PYTHONPATH="${VIRTUAL_ENV}/lib/python3.11/site-packages:/usr/local/lib64/python3.11/site-packages:${PYTHONPATH}"
+
+SHELL ["/bin/bash", "-c"]
+
+# Optional development-only EWTS Python override.
+#
+# Production images should inherit EWTS from ngen. Set FCST_MGR_INSTALL_EWTS=ON
+# only when testing a new EWTS Python package without rebuilding forcing/ngen.
+#
+# To specify EWTS for development only:
+# docker build \
+#  --build-arg FCST_MGR_INSTALL_EWTS=ON \
+#  --build-arg EWTS_REF=my-ewts-branch \
+#  --build-arg EWTS_CACHE_BUST=$(date +%s) \
+#  -t nwm-fcst-mgr .
+RUN --mount=type=cache,target=/root/.cache/pip,id=pip-cache-rocky \
+    set -eux; \
+    FCST_MGR_INSTALL_EWTS="${FCST_MGR_INSTALL_EWTS:-OFF}"; \
+    echo "FCST_MGR_INSTALL_EWTS=${FCST_MGR_INSTALL_EWTS}; EWTS ref: ${EWTS_REF}; cache bust: ${EWTS_CACHE_BUST}"; \
+    FCST_MGR_INSTALL_EWTS_NORMALIZED="$(echo "${FCST_MGR_INSTALL_EWTS}" | tr '[:lower:]' '[:upper:]')"; \
+    if [[ "${FCST_MGR_INSTALL_EWTS_NORMALIZED}" =~ ^(ON|YES|TRUE|1)$ ]]; then \
+        echo "Installing development EWTS Python override"; \
+        rm -rf /tmp/nwm-ewts; \
+        (git clone --depth 1 -b "${EWTS_REF}" \
+            "https://github.com/${EWTS_ORG}/nwm-ewts.git" /tmp/nwm-ewts \
+         || (git clone "https://github.com/${EWTS_ORG}/nwm-ewts.git" /tmp/nwm-ewts && \
+             cd /tmp/nwm-ewts && git checkout "${EWTS_REF}")); \
+        python -m pip install --force-reinstall --no-deps /tmp/nwm-ewts/runtime/python/ewts; \
+        rm -rf /tmp/nwm-ewts; \
+    else \
+        echo "Using EWTS inherited from ngen"; \
+    fi
 
 COPY . /ngen-app/ngen-fcst/
 COPY ./docker/run-ngen-fcst.sh /ngen-app/bin/
