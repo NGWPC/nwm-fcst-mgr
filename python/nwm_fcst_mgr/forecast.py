@@ -599,29 +599,6 @@ def extract_config_from_run_dir(run_dir: str) -> tuple:
     return gpkg, gpkg, ngen_exe
 
 
-def _get_run_type_from_config(input_path: str) -> str:
-    """
-    Read run_type from the [General] section of an input.config file
-
-    Parameters
-    ----------
-    input_path: str
-        Path to input.config file
-
-    Returns
-    ---------
-    run_type string
-    """
-    config = load_config(input_path)
-    try:
-        run_type = config["General"]["run_type"]
-    except KeyError as e:
-        msg = f"run_type not found in [General] section of input.config: {e}"
-        logger.critical(msg)
-        raise KeyError(msg)
-    return run_type
-
-
 def read_troute_output(
         gage0: str,
         cwt_file: Path,
