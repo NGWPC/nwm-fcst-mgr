@@ -464,11 +464,10 @@ def run_workflow(
         If provided, the work will be divided among n processors where n in the number of partitions in this file.
         Otherwise, it will be automatically discovered within the run folder
     """
-    logger.info(f"Partition file: {partition_file}")
     if partition_file is None:
         partition_file = search_for_partition_config(real_path)
         if partition_file:
-            logger.info(f"Discovered partition file: {partition_file}")
+            logger.info(f"Discovered partition file in run folder: {partition_file}")
 
     with ForecastExecutionManager(
         real_path,
