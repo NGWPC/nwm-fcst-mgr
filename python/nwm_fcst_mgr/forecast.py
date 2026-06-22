@@ -892,7 +892,7 @@ def parse_args():
     forecast_workflow_sub = subparser.add_parser("run_forecast", parents=[parent_parser], help="Run forecast workflow")
     forecast_workflow_sub.add_argument('real_path', type=str, help='Path to cold start or forecast period realization file')
     forecast_workflow_sub.add_argument('--no_valid', action="store_true", default=False, help='Use workflow without validation run (default=False)')
-    forecast_workflow_sub.add_argument('--partition_file', type=str, default=False, help='Path to partition configuration file for parallel ngen execution')
+    forecast_workflow_sub.add_argument('--partition_file', type=str, default=None, help='Path to partition configuration file for parallel ngen execution')
 
     # Subcommand: hindcast_workflow
     hindcast_workflow_sub = subparser.add_parser("run_hindcast", parents=[parent_parser], help="Run hindcast workflow")
