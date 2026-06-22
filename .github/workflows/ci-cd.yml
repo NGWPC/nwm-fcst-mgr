@@ -239,9 +239,11 @@ jobs:
             EWTS_ORG=${{ inputs.EWTS_ORG || github.repository_owner }}
             EWTS_REF=${{ inputs.EWTS_REF || needs.setup.outputs.default_ref }}
             EWTS_REVISION=${{ needs.setup.outputs.ewts_revision }}
+            EWTS_CACHE_BUST=${{ needs.setup.outputs.ewts_revision }}
             MSW_MGR_ORG=${{ inputs.MSW_MGR_ORG || github.repository_owner }}
             MSW_MGR_REF=${{ inputs.MSW_MGR_REF || needs.setup.outputs.default_ref }}
             MSW_MGR_REVISION=${{ needs.setup.outputs.msw_mgr_revision }}
+            MSW_MGR_CACHE_BUST=${{ needs.setup.outputs.msw_mgr_revision }}
             IMAGE_SOURCE=https://github.com/${{ github.repository }}
             IMAGE_VENDOR=${{ github.repository_owner }}
             IMAGE_VERSION=${{ needs.setup.outputs.clean_ref }}

@@ -118,7 +118,7 @@ RUN --mount=type=cache,target=/root/.cache/pip,id=pip-cache-rocky \
     else \
         echo "Using EWTS inherited from ngen"; \
     fi
-
+# FCST_CACHE_BUST is not needed becasue this COPY command cache busts for us.
 COPY . /ngen-app/ngen-fcst/
 COPY ./docker/run-ngen-fcst.sh /ngen-app/bin/
 
@@ -134,18 +134,17 @@ RUN --mount=type=cache,target=/root/.cache/pip,id=pip-cache-rocky \
     python -m pip cache purge
 
 # Install MSWM package from the configured repository/ref.
-ARG MSWM_CACHE_BUST=1
+# MSW_MGR_CACHE_BUST = nwm-msw-mgr commit SHA from CI; a new commit busts this layer so mswm is reinstalled from the requested ref, not a stale cache.
+ARG MSW_MGR_CACHE_BUST=1
 RUN --mount=type=cache,target=/root/.cache/pip,id=pip-cache-rocky \
     set -eux; \
-    echo "MSWM cache bust: ${MSWM_CACHE_BUST}" && \
+    echo "MSW MGR cache bust: ${MSW_MGR_CACHE_BUST}" && \
     python -m pip install mswm@git+https://github.com/${MSW_MGR_ORG}/nwm-msw-mgr.git@${MSW_MGR_REF}; \
     python -m pip cache purge
 
 # Install forecast manager into the inherited virtual environment.
-ARG FCST_CACHE_BUST=1
 RUN --mount=type=cache,target=/root/.cache/pip,id=pip-cache-rocky \
     set -eux; \
-    echo "FCST cache bust: ${FCST_CACHE_BUST}" && \
     python -m pip install --no-deps . || python -m pip install .; \
     python -m pip cache purge
 
