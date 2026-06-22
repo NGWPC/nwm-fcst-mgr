@@ -730,7 +730,6 @@ def run_forecast(
         If False (default), use validation-based workflow. If True, use default/regionalzation workflow
     partition_file : str | None (optional) path to partition configuration file.
         If provided, the work will be divided among n processors where n in the number of partitions in this file.
-        TODO add multiprocessing support to run_hindcast and run_lagged_ensemble.
     """
     logger.info(f'Initializing forecast run (no_valid={no_valid})')
 
