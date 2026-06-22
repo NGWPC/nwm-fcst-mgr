@@ -434,10 +434,12 @@ def search_for_partition_config(realization_file: str) -> str:
     If 2+ are found, raise an error."""
     candidates: list[str] = []
 
-    realization_directory = os.path.dirname(os.path.realpath(realization_file))
-    for item in os.listdir(realization_directory):
+    input_dir = Path(os.path.dirname(os.path.realpath(realization_file))) / "Input"
+    if not input_dir.exists():
+        return None
+    for item in os.listdir(input_dir):
         if item.endswith(f"{PARTITION_CONFIG_FILE_NAME_SUFFIX}.json"):
-            candidates.append(os.path.join(realization_directory, item))
+            candidates.append(str(input_dir / item))
     if len(candidates) == 0:
         return None
     if len(candidates) == 1:
@@ -460,7 +462,14 @@ def run_workflow(
     suppress_output: suppress postprocess output of plot and csv of streamflow
     partition_file: (optional) path to partition configuration file.
         If provided, the work will be divided among n processors where n in the number of partitions in this file.
+        Otherwise, it will be automatically discovered within the run folder
     """
+    logger.info(f"Partition file: {partition_file}")
+    if partition_file is None:
+        partition_file = search_for_partition_config(real_path)
+        if partition_file:
+            logger.info(f"Discovered partition file: {partition_file}")
+
     with ForecastExecutionManager(
         real_path,
         config_cache,
@@ -883,6 +892,7 @@ def parse_args():
     forecast_workflow_sub = subparser.add_parser("run_forecast", parents=[parent_parser], help="Run forecast workflow")
     forecast_workflow_sub.add_argument('real_path', type=str, help='Path to cold start or forecast period realization file')
     forecast_workflow_sub.add_argument('--no_valid', action="store_true", default=False, help='Use workflow without validation run (default=False)')
+    forecast_workflow_sub.add_argument('--partition_file', type=str, default=False, help='Path to partition configuration file for parallel ngen execution')
 
     # Subcommand: hindcast_workflow
     hindcast_workflow_sub = subparser.add_parser("run_hindcast", parents=[parent_parser], help="Run hindcast workflow")
@@ -902,7 +912,7 @@ def main():
 
     # Run fcst/hindcast workflows
     if args.command == "run_forecast":
-        run_forecast(real_path=args.real_path, valid_yaml=args.valid_yaml, no_valid=args.no_valid)
+        run_forecast(real_path=args.real_path, valid_yaml=args.valid_yaml, no_valid=args.no_valid, partition_file=args.partition_file)
     elif args.command == "run_hindcast":
         run_hindcast(valid_yaml=args.valid_yaml, input_path=args.input_path,
                      fcst_run_name=args.fcst_run_name, cycle_interval=args.cycle_interval,
