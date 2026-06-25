@@ -393,7 +393,7 @@ class ForecastExecutionManager:
         # move output files to output directory
         run_output_dir = self.out_dir / "Output/"
         run_output_dir.mkdir(parents=True, exist_ok=True)
-        for pat1 in ["cat*.csv", "nex*.csv", "troute*.nc"]:
+        for pat1 in ["cat*.csv", "cat*.nc", "nex*.csv", "troute*.nc"]:
             for f1 in glob.glob(f"{self.out_dir}/{pat1}"):
                 shutil.move(f1, Path(run_output_dir, os.path.basename(f1)))
 
