@@ -62,25 +62,29 @@ ARG APP_DIR
 
 # OCI Metadata Arguments
 #
-# BASE_IMAGE_* refers to the ngen image this image is built FROM.
-ARG BASE_IMAGE_DIGEST="unknown"
-ARG BASE_IMAGE_REVISION="unknown"
+# NGEN_IMAGE_* refers to the ngen image this image is built FROM.
+ARG NGEN_IMAGE_DIGEST="unknown"
+ARG NGEN_IMAGE_REVISION="unknown"
 ARG IMAGE_SOURCE="unknown"
 ARG IMAGE_VENDOR="unknown"
 ARG IMAGE_VERSION="unknown"
 ARG IMAGE_REVISION="unknown"
+ARG EWTS_REVISION="unknown"
 ARG MSW_MGR_REVISION="unknown"
 
 # Image Labels: OCI-spec annotations followed by custom source-repo metadata.
 LABEL org.opencontainers.image.base.name="${NGEN_IMAGE}" \
-      org.opencontainers.image.base.digest="${BASE_IMAGE_DIGEST}" \
+      org.opencontainers.image.base.digest="${NGEN_IMAGE_DIGEST}" \
       org.opencontainers.image.source="${IMAGE_SOURCE}" \
       org.opencontainers.image.vendor="${IMAGE_VENDOR}" \
       org.opencontainers.image.version="${IMAGE_VERSION}" \
       org.opencontainers.image.revision="${IMAGE_REVISION}" \
       org.opencontainers.image.title="NGEN Forecast/Hindcast Manager" \
       org.opencontainers.image.description="Docker image for the NGEN Forecast/Hindcast application" \
-      io.${IMAGE_NAMESPACE}.image.base.revision="${BASE_IMAGE_REVISION}" \
+      io.${IMAGE_NAMESPACE}.image.base.revision="${NGEN_IMAGE_REVISION}" \
+      io.${IMAGE_NAMESPACE}.ewts.org="${EWTS_ORG}" \
+      io.${IMAGE_NAMESPACE}.ewts.ref="${EWTS_REF}" \
+      io.${IMAGE_NAMESPACE}.ewts.revision="${EWTS_REVISION}" \
       io.${IMAGE_NAMESPACE}.msw.mgr.org="${MSW_MGR_ORG}" \
       io.${IMAGE_NAMESPACE}.msw.mgr.ref="${MSW_MGR_REF}" \
       io.${IMAGE_NAMESPACE}.msw.mgr.revision="${MSW_MGR_REVISION}"
@@ -152,14 +156,14 @@ RUN --mount=type=cache,target=/root/.cache/pip,id=pip-cache-bookworm \
 # Install MSWM package from the configured repository/ref.
 # MSW_MGR_CACHE_BUST = nwm-msw-mgr commit SHA from CI; a new commit busts this layer so mswm is reinstalled from the requested ref, not a stale cache.
 ARG MSW_MGR_CACHE_BUST=1
-RUN --mount=type=cache,target=/root/.cache/pip,id=pip-cache-rocky \
+RUN --mount=type=cache,target=/root/.cache/pip,id=pip-cache-bookworm \
     set -eux; \
     echo "MSW MGR cache bust: ${MSW_MGR_CACHE_BUST}" && \
     python -m pip install mswm@git+https://github.com/${MSW_MGR_ORG}/nwm-msw-mgr.git@${MSW_MGR_REF}; \
     python -m pip cache purge
 
 # Install forecast manager into the inherited virtual environment.
-RUN --mount=type=cache,target=/root/.cache/pip,id=pip-cache-rocky \
+RUN --mount=type=cache,target=/root/.cache/pip,id=pip-cache-bookworm \
     set -eux; \
     python -m pip install .
 
