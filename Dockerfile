@@ -180,6 +180,8 @@ RUN set -eux; \
 ARG CI_COMMIT_REF_NAME
 
 RUN set -eux; \
+    # Ensure local tag metadata includes all remote tags before creating git_info.
+    git fetch --force --tags origin '+refs/tags/*:refs/tags/*' && \
     repo_url=$(git config --get remote.origin.url); \
     key=${repo_url##*/}; \
     key=${key%.git}; \
