@@ -18,7 +18,6 @@ import matplotlib.pyplot as plt
 import netCDF4
 import pandas as pd
 import yaml
-import ewts
 from ewts import Payload, Status
 from ewts.modules import ModuleKey
 from mswm.manager import build_fcst
@@ -33,6 +32,7 @@ from nwm_fcst_mgr.utils import (
     OS_ENV_KEY_NGEN_LOG_FILE_PREFIX,
     OS_ENV_KEY_RESULTS_DIR,
     initialize_logger,
+    initialize_hindcast_logger,
     set_os_env_key,
 )
 
@@ -110,7 +110,7 @@ class ForecastExecutionManager:
 
     Parameters
     ----------
-    real_path : str 
+    real_path : str
         Path to existing realization file
     config_cache : ConfigCache
         Instance of ConfigCache
@@ -859,14 +859,7 @@ def run_hindcast(input_path, valid_yaml, fcst_run_name, cycle_interval, num_iter
         # Initialize hindcast orchestration logger after first build_fcst() call; hindcast root directory now resolvable
         if hindcast_logger is None:
             hindcast_root = Path(hind_real_path).parent.parent
-            hindcast_logger = ewts.logger.setup_logger(
-                HINDCAST_LOGGER_ID,
-                level="INFO",
-                log_dir=hindcast_root,
-                log_file_name="fcst_mgr_hindcast.log",
-                running_in_ngen=False,
-                enabled=True,
-            )
+            hindcast_logger = initialize_hindcast_logger(str(hindcast_root))
             # Flush pending logs
             for msg in pending_logs:
                 hindcast_logger.info(msg)

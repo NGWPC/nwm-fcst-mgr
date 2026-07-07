@@ -7,6 +7,7 @@ from pathlib import Path
 
 OS_ENV_KEY_RESULTS_DIR = "NGEN_RESULTS_DIR"
 OS_ENV_KEY_NGEN_LOG_FILE_PREFIX = "NGEN_LOG_FILE_PREFIX"
+HINDCAST_LOGGER_ID = "hindcast_logger"
 
 def set_os_env_key(key: str, val: str, override: bool = True) -> None:
     """Set the value of the OS environment key.
@@ -43,6 +44,7 @@ def set_os_env_key(key: str, val: str, override: bool = True) -> None:
     LOG.info(f"Setting OS env key {repr(key)} to value {repr(val)}.")
     environ[key] = val
 
+
 def create_timestamp(date_only: bool = False, iso: bool = False, append_ms: bool = False) -> str:
     now = datetime.now(timezone.utc)
 
@@ -58,6 +60,7 @@ def create_timestamp(date_only: bool = False, iso: bool = False, append_ms: bool
         return ts_base + ms_str
     else:
         return ts_base
+
 
 def initialize_logger(log_path: str | None = None, log_id: str | None = None) -> tuple[ewts.EwtsLogger, Path]:
     '''
@@ -88,8 +91,6 @@ def initialize_logger(log_path: str | None = None, log_id: str | None = None) ->
             log_file_dir = base_dir / "run-logs/fcst-mgr"
 
         log_file_name = f"fcst_mgr_{create_timestamp()}.log"
-    
-    
 
     # In case the logger was previously setup for bootstrapping
     ewts.logger.reset_logger(ewts.FCST_MGR_ID)
@@ -104,3 +105,24 @@ def initialize_logger(log_path: str | None = None, log_id: str | None = None) ->
     ), (log_file_dir / log_file_name)
 
 
+def initialize_hindcast_logger(log_path: str) -> ewts.EwtsLogger:
+    '''
+    Set up the dedicated hindcast logger, which persists for the duration of a run_hindcast() workflow
+
+    Arguments
+    ---------
+    log_path: Directory to write hindcast log (hindcast run's root folder)
+
+    Returns
+    -------
+    ewts.EwtsLogger
+        Instance of the EWTS logger.
+    '''
+    return ewts.logger.setup_logger(
+        HINDCAST_LOGGER_ID,
+        level="INFO",
+        log_dir=Path(log_path),
+        log_file_name="fcst_mgr_hindcast.log",
+        running_in_ngen=False,
+        enabled=True,
+    )
