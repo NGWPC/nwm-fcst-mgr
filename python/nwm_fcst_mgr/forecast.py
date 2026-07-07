@@ -72,7 +72,6 @@ class ConfigCache:
                 raise ValueError(msg)
             self.valid_yaml = valid_yaml
             self.valid_config = load_yaml(valid_yaml)
-            logger.info(f"Validation file loaded from: {valid_yaml}")
             self.gpkg_cats, self.gpkg_nexus, self.ngen_exe, self.gage0 = extract_config(
                 self.valid_config, self.valid_yaml
             )
@@ -424,7 +423,7 @@ class ForecastExecutionManager:
             self.output_csv = Path(run_output_dir, self.gage0 + "_output.csv")
             output.to_csv(self.output_csv)
 
-            logger.info(f"Fcst-mgr NGEN run outputs saved at: {run_output_dir}")
+            logger.info(f"Fcst-mgr NGEN postprocessing outputs saved at: {run_output_dir}")
 
         self._status = RunStatus.POSTPROCESSED
         logger.status(
