@@ -2,6 +2,7 @@
 
 import ewts
 from datetime import datetime, timezone
+import os
 from os import environ
 from pathlib import Path
 
@@ -94,6 +95,9 @@ def initialize_logger(log_path: str | None = None, log_id: str | None = None) ->
 
     # In case the logger was previously setup for bootstrapping
     ewts.logger.reset_logger(ewts.FCST_MGR_ID)
+
+    # In certain conditions the log dir does not yet exist
+    os.makedirs(log_file_dir, exist_ok=True)
 
     return ewts.logger.setup_logger(
         ewts.FCST_MGR_ID,
