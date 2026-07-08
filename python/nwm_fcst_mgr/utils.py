@@ -8,7 +8,8 @@ from pathlib import Path
 
 OS_ENV_KEY_RESULTS_DIR = "NGEN_RESULTS_DIR"
 OS_ENV_KEY_NGEN_LOG_FILE_PREFIX = "NGEN_LOG_FILE_PREFIX"
-HINDCAST_LOGGER_ID = "hindcast_logger"
+HINDCAST_LOGGER_ID = "HINDCAST"
+
 
 def set_os_env_key(key: str, val: str, override: bool = True) -> None:
     """Set the value of the OS environment key.
