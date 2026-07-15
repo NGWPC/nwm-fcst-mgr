@@ -133,7 +133,7 @@ from nwm_fcst_mgr.forecast import run_hindcast
 
 run_hindcast(
     valid_yaml='/path/to/valid.yaml',
-    input_path='/path/to/input.config',
+    config='/path/to/input.config',
     fcst_run_name='my_hindcast_run',
     cycle_interval=3,
     num_iterations=10,
@@ -143,7 +143,7 @@ run_hindcast(
 
 #### Arguments
 - `valid_yaml` - Path to validation yaml file from previous calibration run (from nwm-cal-mgr)
-- `input_path` - Path to forecast input configuration file (from nwm-msw-mgr)
+- `config` - Path to forecast input configuration file (as str), or instance of InputConfig (both from nwm-msw-mgr)
 - `my_hindcast_run` - Name for the hindcast run folder
 - `cycle_interval` - Cycle interval in hours (spacing between hindcast cycles)
 - `num_iterations` - Number of hindcast cycles to perform
