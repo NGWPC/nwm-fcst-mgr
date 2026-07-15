@@ -123,7 +123,7 @@ RUN --mount=type=cache,target=/root/.cache/pip,id=pip-cache-rocky \
     else \
         echo "Using EWTS inherited from ngen"; \
     fi
-# FCST_CACHE_BUST is not needed becasue this COPY command cache busts for us.
+
 COPY . ${APP_DIR}/ngen-fcst/
 COPY ./docker/run-ngen-fcst.sh ${APP_DIR}/bin/
 
