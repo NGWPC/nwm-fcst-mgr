@@ -7,8 +7,10 @@ A program to execute forecast and hindcast runs runs provided a configuration fi
 
 ### Clone nwm-fcst-mgr
 
+This repository is the NGWPC fork of `nwm-fcst-mgr`, maintained ahead of eventual merge to [NOAA-OWP/nwm-fcst-mgr](https://github.com/NOAA-OWP/nwm-fcst-mgr). Clone instructions below reference the NGWPC fork, as it is the current active development source.
+
 ```bash
-git clone -b development --recurse-submodules https://github.com/NGWPC/nwm-fcst-mgr.git
+git clone --recurse-submodules https://github.com/NGWPC/nwm-fcst-mgr.git
 ```
 
 ### Build the environment
