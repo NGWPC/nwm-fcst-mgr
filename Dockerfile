@@ -2,7 +2,7 @@
 
 ############################################################################
 # Change/Verify these values when adopting this Dockerfile into another org:
-#   GH_ORG, GHCR_ORG, IMAGE_NAMESPACE,
+#   GH_ORG, GHCR_ORG, IMAGE_NAMESPACE, APP_DIR,
 #   MSW_MGR_ORG, MSW_MGR_REF, EWTS_ORG, EWTS_REF
 ############################################################################
 
@@ -11,6 +11,10 @@ ARG GH_ORG=NGWPC
 ARG GHCR_ORG=ngwpc
 ARG IMAGE_NAMESPACE=ngwpc
 
+# Configurable application working directory. Defaults to /ngen-app, but
+# can be overriden for environments where creating directories off root is restricted
+ARG APP_DIR=/ngen-app
+
 # External repository sources
 ARG MSW_MGR_ORG=${GH_ORG}
 ARG MSW_MGR_REF=development
@@ -18,7 +22,7 @@ ARG MSW_MGR_REF=development
 ARG EWTS_ORG=${GH_ORG}
 ARG EWTS_REF=development
 
-ARG FCST_MGR_INSTALL_EWTS=OFF
+ARG USE_EWTS=ON
 ARG EWTS_CACHE_BUST=0
 
 ############################################################################
@@ -51,9 +55,10 @@ ARG MSW_MGR_ORG
 ARG MSW_MGR_REF
 ARG EWTS_ORG
 ARG EWTS_REF
-ARG FCST_MGR_INSTALL_EWTS
+ARG USE_EWTS
 ARG EWTS_CACHE_BUST
 ARG NGEN_IMAGE
+ARG APP_DIR
 
 # OCI Metadata Arguments
 #
@@ -92,21 +97,21 @@ SHELL ["/bin/bash", "-c"]
 
 # Optional development-only EWTS Python override.
 #
-# Production images should inherit EWTS from ngen. Set FCST_MGR_INSTALL_EWTS=ON
+# Production images should inherit EWTS from ngen. Set USE_EWTS=ON
 # only when testing a new EWTS Python package without rebuilding forcing/ngen.
 #
 # To specify EWTS for development only:
 # docker build \
-#  --build-arg FCST_MGR_INSTALL_EWTS=ON \
+#  --build-arg USE_EWTS=ON \
 #  --build-arg EWTS_REF=my-ewts-branch \
 #  --build-arg EWTS_CACHE_BUST=$(date +%s) \
 #  -t nwm-fcst-mgr .
 RUN --mount=type=cache,target=/root/.cache/pip,id=pip-cache-rocky \
     set -eux; \
-    FCST_MGR_INSTALL_EWTS="${FCST_MGR_INSTALL_EWTS:-OFF}"; \
-    echo "FCST_MGR_INSTALL_EWTS=${FCST_MGR_INSTALL_EWTS}; EWTS ref: ${EWTS_REF}; cache bust: ${EWTS_CACHE_BUST}"; \
-    FCST_MGR_INSTALL_EWTS_NORMALIZED="$(echo "${FCST_MGR_INSTALL_EWTS}" | tr '[:lower:]' '[:upper:]')"; \
-    if [[ "${FCST_MGR_INSTALL_EWTS_NORMALIZED}" =~ ^(ON|YES|TRUE|1)$ ]]; then \
+    USE_EWTS="${USE_EWTS:-ON}"; \
+    echo "USE_EWTS=${USE_EWTS}; EWTS ref: ${EWTS_REF}; cache bust: ${EWTS_CACHE_BUST}"; \
+    USE_EWTS_NORMALIZED="$(echo "${USE_EWTS}" | tr '[:lower:]' '[:upper:]')"; \
+    if [[ "${USE_EWTS_NORMALIZED}" =~ ^(ON|YES|TRUE|1)$ ]]; then \
         echo "Installing development EWTS Python override"; \
         rm -rf /tmp/nwm-ewts; \
         (git clone --depth 1 -b "${EWTS_REF}" \
@@ -119,13 +124,13 @@ RUN --mount=type=cache,target=/root/.cache/pip,id=pip-cache-rocky \
         echo "Using EWTS inherited from ngen"; \
     fi
 # FCST_CACHE_BUST is not needed becasue this COPY command cache busts for us.
-COPY . /ngen-app/ngen-fcst/
-COPY ./docker/run-ngen-fcst.sh /ngen-app/bin/
+COPY . ${APP_DIR}/ngen-fcst/
+COPY ./docker/run-ngen-fcst.sh ${APP_DIR}/bin/
 
 RUN set -eux; \
-    chmod +x /ngen-app/bin/run-ngen-fcst.sh
+    chmod +x ${APP_DIR}/bin/run-ngen-fcst.sh
 
-WORKDIR /ngen-app/ngen-fcst
+WORKDIR ${APP_DIR}/ngen-fcst
 
 # Install forecast-specific Python dependencies not already provided by ngen.
 RUN --mount=type=cache,target=/root/.cache/pip,id=pip-cache-rocky \
