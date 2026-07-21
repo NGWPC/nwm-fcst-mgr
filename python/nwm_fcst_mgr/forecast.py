@@ -318,7 +318,7 @@ class ForecastExecutionManager:
             self._stop_ngen()
         self._check_process_returncode()
 
-    def preprocess(self) -> None:
+    def preprocess(self, do_override_log_file_prefix: bool = False) -> None:
         """Preprocess an ngen run, validate some inputs, and set the execution status."""
 
         # Use cached config values
@@ -333,7 +333,7 @@ class ForecastExecutionManager:
             OS_ENV_KEY_RESULTS_DIR, str(self.out_dir), override=False
         )
         set_os_env_key(
-            OS_ENV_KEY_NGEN_LOG_FILE_PREFIX, self.out_dir.name, override=False
+            OS_ENV_KEY_NGEN_LOG_FILE_PREFIX, self.out_dir.name, override=do_override_log_file_prefix
         )
 
         self._status = RunStatus.PREPROCESSED
