@@ -12,6 +12,7 @@ import time
 from datetime import datetime, timedelta
 from enum import Enum, auto
 from pathlib import Path
+from typing import Generator
 
 import geopandas as gpd
 import matplotlib.pyplot as plt
@@ -764,10 +765,25 @@ def run_forecast(
     logger.info("Ngen run completed")
 
 
-def run_hindcast(config: str | InputConfig, valid_yaml, fcst_run_name, cycle_interval, num_iterations, cold_start_state=None):
+def run_hindcast(
+        config: str | InputConfig,
+        valid_yaml,
+        fcst_run_name,
+        cycle_interval,
+        num_iterations,
+        cold_start_state=None,
+        yield_realizations: bool = False,
+    ) -> None | Generator[int, None, None]:
     """
     Run hindcast workflow with warm start runs, initial cold start should be run separately
-    Accepts cycle interval and number of intervals for repeated hindcasts
+    Accepts cycle interval and number of intervals for repeated hindcasts.
+
+    If yield_realizations is True, then this function acts as a generator of (built) RealizationBuilder
+    instances, with the assumption that the caller will execute each realization as it is generated,
+    before the next one is generated.
+
+    If yield_realizations is False, then this function builds and runs the realizations sequence itself
+    (which takes significant time to return).
 
     Parameters
     ---------
@@ -785,6 +801,9 @@ def run_hindcast(config: str | InputConfig, valid_yaml, fcst_run_name, cycle_int
         Path to directory containing state files to load at start of first hindcast
         If provided, will be used for first hindcast cycle (hind_cycle=0)
         Subsequent cycles will use warm start states
+    yield_realizations: bool
+        If True, then this function will act as a generator and will yield each RealizationBuilder
+        instance after constructing it and calling its build_fcst_realization() method.
     """
     # Set up hindcast orchestration logger, initialized once the hindcast root directory is known
     hindcast_logger = None
@@ -851,7 +870,10 @@ def run_hindcast(config: str | InputConfig, valid_yaml, fcst_run_name, cycle_int
             hindcast_logger.info(f"Warm start realization file for hindcast iteration at {hind_cycle} hours written to: {warm_start_real_path}")
 
             # Execute warm start ngen run to generate hindcasting model states
-            run_workflow(warm_start_real_path, config_cache, suppress_output=True)
+            if yield_realizations:
+                yield rb
+            else:
+                run_workflow(warm_start_real_path, config_cache, suppress_output=True)
             hindcast_logger.info(f"Warm start run for hindcast iteration at {hind_cycle} hours completed")
             hindcast_logger.info(f"Warm start state saved to {warm_start_state}")
 
@@ -894,7 +916,10 @@ def run_hindcast(config: str | InputConfig, valid_yaml, fcst_run_name, cycle_int
         hindcast_logger.info(f'Hindcast realization file for iteration at {hind_cycle} hours written to: {hind_real_path}')
 
         # Run hindcasting period
-        run_workflow(hind_real_path, config_cache)
+        if yield_realizations:
+            yield rb
+        else:
+            run_workflow(hind_real_path, config_cache)
         hindcast_logger.info(f"Hindcast run for iteration at {hind_cycle} hours completed")
 
         # Store previous hindcast cycle value to set next warm start duration
