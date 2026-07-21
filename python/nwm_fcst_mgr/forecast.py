@@ -773,7 +773,7 @@ def run_hindcast(
         num_iterations,
         cold_start_state=None,
         yield_realizations: bool = False,
-    ) -> None | Generator[int, None, None]:
+    ) -> None | Generator[RealizationBuilder, None, None]:
     """
     Run hindcast workflow with warm start runs, initial cold start should be run separately
     Accepts cycle interval and number of intervals for repeated hindcasts.
