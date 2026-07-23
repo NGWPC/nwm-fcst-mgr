@@ -3,7 +3,8 @@
 ############################################################################
 # Change/Verify these values when adopting this Dockerfile into another org:
 #   GH_ORG, GHCR_ORG, IMAGE_NAMESPACE, APP_DIR,
-#   MSW_MGR_ORG, MSW_MGR_REF, EWTS_ORG, EWTS_REF
+#   MSW_MGR_ORG, MSW_MGR_REF, EWTS_ORG, EWTS_REF,
+#   USE_EWTS, EWTS_CACHE_BUST
 ############################################################################
 
 # Ownership / branding overrides
@@ -11,8 +12,10 @@ ARG GH_ORG=NGWPC
 ARG GHCR_ORG=ngwpc
 ARG IMAGE_NAMESPACE=ngwpc
 
-# Configurable application working directory. Defaults to /ngen-app, but
-# can be overriden for environments where creating directories off root is restricted
+# Configurable forecast-manager application directory. Defaults to /ngen-app.
+# This is of limited usefulness because the image inherits ngen, its Python
+# virtual environment, and related base paths from the ngen image. This setting
+# only controls forecast-manager-specific files copied by this Dockerfile.
 ARG APP_DIR=/ngen-app
 
 # External repository sources
@@ -22,7 +25,7 @@ ARG MSW_MGR_REF=development
 ARG EWTS_ORG=${GH_ORG}
 ARG EWTS_REF=development
 
-ARG USE_EWTS=ON
+ARG USE_EWTS=OFF
 ARG EWTS_CACHE_BUST=0
 
 ############################################################################
@@ -39,15 +42,15 @@ ARG EWTS_CACHE_BUST=0
 #     --build-arg NGEN_IMAGE=ghcr.io/ngwpc/ngen:development \
 #     -t ngen-fcst .
 #
-# Build from a locally built ngen image:
+# Build from a locally built Bookworm ngen image:
 #   docker build \
-#     --build-arg NGEN_IMAGE=ngen \
-#     -t ngen-fcst .
+#     --build-arg NGEN_IMAGE=ngen-bookworm \
+#     -t nwm-fcst-mgr .
 ARG NGEN_IMAGE=ghcr.io/${GHCR_ORG}/ngen:latest
 
 FROM ${NGEN_IMAGE}
 
-# Re-expose args after FROM for the remaining build stage
+# Re-expose args after FROM for use in this stage.
 ARG GH_ORG
 ARG GHCR_ORG
 ARG IMAGE_NAMESPACE
@@ -62,53 +65,60 @@ ARG APP_DIR
 
 # OCI Metadata Arguments
 #
-# BASE_IMAGE_* refers to the ngen image this image is built FROM.
-ARG BASE_IMAGE_DIGEST="unknown"
-ARG BASE_IMAGE_REVISION="unknown"
+# NGEN_IMAGE_* refers to the ngen image this image is built FROM.
+ARG NGEN_IMAGE_DIGEST="unknown"
+ARG NGEN_IMAGE_REVISION="unknown"
 ARG IMAGE_SOURCE="unknown"
 ARG IMAGE_VENDOR="unknown"
 ARG IMAGE_VERSION="unknown"
 ARG IMAGE_REVISION="unknown"
+ARG EWTS_REVISION="unknown"
 ARG MSW_MGR_REVISION="unknown"
 
 # Image Labels: OCI-spec annotations followed by custom source-repo metadata.
 LABEL org.opencontainers.image.base.name="${NGEN_IMAGE}" \
-    org.opencontainers.image.base.digest="${BASE_IMAGE_DIGEST}" \
-    org.opencontainers.image.source="${IMAGE_SOURCE}" \
-    org.opencontainers.image.vendor="${IMAGE_VENDOR}" \
-    org.opencontainers.image.version="${IMAGE_VERSION}" \
-    org.opencontainers.image.revision="${IMAGE_REVISION}" \
-    org.opencontainers.image.title="NGEN Forecast/Hindcast Manager" \
-    org.opencontainers.image.description="Docker image for the NGEN Forecast/Hindcast application" \
-    io.${IMAGE_NAMESPACE}.image.base.revision="${BASE_IMAGE_REVISION}" \
-    io.${IMAGE_NAMESPACE}.msw.mgr.org="${MSW_MGR_ORG}" \
-    io.${IMAGE_NAMESPACE}.msw.mgr.ref="${MSW_MGR_REF}" \
-    io.${IMAGE_NAMESPACE}.msw.mgr.revision="${MSW_MGR_REVISION}"
+      org.opencontainers.image.base.digest="${NGEN_IMAGE_DIGEST}" \
+      org.opencontainers.image.source="${IMAGE_SOURCE}" \
+      org.opencontainers.image.vendor="${IMAGE_VENDOR}" \
+      org.opencontainers.image.version="${IMAGE_VERSION}" \
+      org.opencontainers.image.revision="${IMAGE_REVISION}" \
+      org.opencontainers.image.title="NGEN Forecast/Hindcast Manager" \
+      org.opencontainers.image.description="Docker image for the NGEN Forecast/Hindcast application" \
+      io.${IMAGE_NAMESPACE}.image.base.revision="${NGEN_IMAGE_REVISION}" \
+      io.${IMAGE_NAMESPACE}.ewts.org="${EWTS_ORG}" \
+      io.${IMAGE_NAMESPACE}.ewts.ref="${EWTS_REF}" \
+      io.${IMAGE_NAMESPACE}.ewts.revision="${EWTS_REVISION}" \
+      io.${IMAGE_NAMESPACE}.msw.mgr.org="${MSW_MGR_ORG}" \
+      io.${IMAGE_NAMESPACE}.msw.mgr.ref="${MSW_MGR_REF}" \
+      io.${IMAGE_NAMESPACE}.msw.mgr.revision="${MSW_MGR_REVISION}"
 
-# Re-expose the Python virtual environment inherited from ngen.
-# The dependency image creates the venv and the unversioned `python` symlink.
-# ngen-bmi-forcing and ngen install their Python packages into that venv.
-# forecast should reuse it rather than recreating it.
-ENV VIRTUAL_ENV="/ngen-app/ngen-python" \
-    PATH="${VIRTUAL_ENV}/bin:${PATH}" \
-    PYTHONPATH="${VIRTUAL_ENV}/lib/python3.11/site-packages:/usr/local/lib64/python3.11/site-packages:${PYTHONPATH}"
+# Reuse the Python virtual environment inherited from ngen. The dependency image
+# creates the venv; forcing and ngen install their Python packages into that same
+# environment. Do not recreate it here.
+ENV APP_DIR="${APP_DIR}"
+ENV VIRTUAL_ENV="/ngen-app/ngen-python"
+ENV PATH="${VIRTUAL_ENV}/bin:${PATH}"
 
 SHELL ["/bin/bash", "-c"]
 
-# Optional development-only EWTS Python override.
-#
-# Production images should inherit EWTS from ngen. Set USE_EWTS=ON
-# only when testing a new EWTS Python package without rebuilding forcing/ngen.
+############################################################################
+# Optional development-only EWTS Python override
+############################################################################
+
+# Production images inherit EWTS from ngen. Set USE_EWTS=ON only when testing a
+# new EWTS Python package without rebuilding forcing/ngen. EWTS_CACHE_BUST can
+# be changed to force Docker to rerun this layer when testing a new EWTS ref
+# or force reinstalling the same ref.
 #
 # To specify EWTS for development only:
-# docker build \
-#  --build-arg USE_EWTS=ON \
-#  --build-arg EWTS_REF=my-ewts-branch \
-#  --build-arg EWTS_CACHE_BUST=$(date +%s) \
-#  -t nwm-fcst-mgr .
-RUN --mount=type=cache,target=/root/.cache/pip,id=pip-cache-rocky \
+#   docker build \
+#     --build-arg USE_EWTS=ON \
+#     --build-arg EWTS_REF=my-ewts-branch \
+#     --build-arg EWTS_CACHE_BUST=$(date +%s) \
+#     -t nwm-fcst-mgr .
+RUN --mount=type=cache,target=/root/.cache/pip,id=pip-cache-bookworm \
     set -eux; \
-    USE_EWTS="${USE_EWTS:-ON}"; \
+    USE_EWTS="${USE_EWTS:-OFF}"; \
     echo "USE_EWTS=${USE_EWTS}; EWTS ref: ${EWTS_REF}; cache bust: ${EWTS_CACHE_BUST}"; \
     USE_EWTS_NORMALIZED="$(echo "${USE_EWTS}" | tr '[:lower:]' '[:upper:]')"; \
     if [[ "${USE_EWTS_NORMALIZED}" =~ ^(ON|YES|TRUE|1)$ ]]; then \
@@ -118,11 +128,18 @@ RUN --mount=type=cache,target=/root/.cache/pip,id=pip-cache-rocky \
             "https://github.com/${EWTS_ORG}/nwm-ewts.git" /tmp/nwm-ewts \
          || (git clone "https://github.com/${EWTS_ORG}/nwm-ewts.git" /tmp/nwm-ewts && \
              cd /tmp/nwm-ewts && git checkout "${EWTS_REF}")); \
-        python -m pip install --force-reinstall --no-deps /tmp/nwm-ewts/runtime/python/ewts; \
+        python -m pip install \
+            --force-reinstall \
+            --no-deps \
+            /tmp/nwm-ewts/runtime/python/ewts; \
         rm -rf /tmp/nwm-ewts; \
     else \
         echo "Using EWTS inherited from ngen"; \
     fi
+
+############################################################################
+# Forecast manager source
+############################################################################
 
 COPY . ${APP_DIR}/ngen-fcst/
 COPY ./docker/run-ngen-fcst.sh ${APP_DIR}/bin/
@@ -132,38 +149,53 @@ RUN set -eux; \
 
 WORKDIR ${APP_DIR}/ngen-fcst
 
+############################################################################
+# Forecast-specific Python dependencies
+############################################################################
+
 # Install forecast-specific Python dependencies not already provided by ngen.
-RUN --mount=type=cache,target=/root/.cache/pip,id=pip-cache-rocky \
+RUN --mount=type=cache,target=/root/.cache/pip,id=pip-cache-bookworm \
     set -eux; \
-    python -m pip install "matplotlib~=3.10.6"; \
-    python -m pip cache purge
+    python -m pip install "matplotlib~=3.10.6"
 
 # Install MSWM package from the configured repository/ref.
-# MSW_MGR_CACHE_BUST = nwm-msw-mgr commit SHA from CI; a new commit busts this layer so mswm is reinstalled from the requested ref, not a stale cache.
+# MSW_MGR_CACHE_BUST = nwm-msw-mgr commit SHA from CI; a new commit busts this layer
+# so mswm is reinstalled from the requested ref, not a stale cache.
 ARG MSW_MGR_CACHE_BUST=1
-RUN --mount=type=cache,target=/root/.cache/pip,id=pip-cache-rocky \
+
+RUN --mount=type=cache,target=/root/.cache/pip,id=pip-cache-bookworm \
     set -eux; \
-    echo "MSW MGR cache bust: ${MSW_MGR_CACHE_BUST}" && \
-    python -m pip install mswm@git+https://github.com/${MSW_MGR_ORG}/nwm-msw-mgr.git@${MSW_MGR_REF}; \
-    python -m pip cache purge
+    echo "MSW MGR cache bust: ${MSW_MGR_CACHE_BUST}"; \
+    python -m pip install "mswm@git+https://github.com/${MSW_MGR_ORG}/nwm-msw-mgr.git@${MSW_MGR_REF}"
 
 # Install forecast manager into the inherited virtual environment.
-RUN --mount=type=cache,target=/root/.cache/pip,id=pip-cache-rocky \
+RUN --mount=type=cache,target=/root/.cache/pip,id=pip-cache-bookworm \
     set -eux; \
-    python -m pip install --no-deps . || python -m pip install .; \
-    python -m pip cache purge
+    python -m pip install .
+
+# Verify that the inherited Python environment remains internally consistent.
+RUN set -eux; \
+    python -m pip check; \
+    python -c "import sys; assert sys.version_info[:2] == (3, 12), sys.version; print('Python version:', sys.version)"
+
+############################################################################
+# Git provenance
+############################################################################
 
 ARG CI_COMMIT_REF_NAME
 
 RUN set -eux; \
-    # Get the remote URL from Git configuration
+    # Ensure local tag metadata includes all remote tags before creating git_info.
+    git fetch --force --tags origin '+refs/tags/*:refs/tags/*'; \
+    # Get the remote URL from Git configuration.
     repo_url=$(git config --get remote.origin.url); \
-    # Extract the repo name (everything after the last slash) and remove any trailing .git
+    repo_url="${repo_url%/}"; \
+    # Extract the repo name (everything after the last slash) and remove any trailing .git.
     key=${repo_url##*/}; \
     key=${key%.git}; \
-    # Construct the file path using the derived key
-    GIT_INFO_PATH="/ngen-app/${key}_git_info.json"; \
-    # Determine branch name: use CI_COMMIT_REF_NAME if set; otherwise, use git's current branch
+    # Construct the file path using the derived key.
+    GIT_INFO_PATH="${APP_DIR}/${key}_git_info.json"; \
+    # Determine branch name: use CI_COMMIT_REF_NAME if set; otherwise, use git's current branch.
     branch=$( [ -n "${CI_COMMIT_REF_NAME:-}" ] && echo "${CI_COMMIT_REF_NAME}" || git rev-parse --abbrev-ref HEAD ); \
     jq -n \
       --arg commit_hash "$(git rev-parse HEAD)" \
@@ -174,8 +206,8 @@ RUN set -eux; \
       --arg message "$(git log -1 --pretty=format:'%s' | tr '\n' ';')" \
       --arg build_date "$(date -u +'%Y-%m-%d %H:%M:%S UTC')" \
       "{\"$key\": {commit_hash: \$commit_hash, branch: \$branch, tags: \$tags, author: \$author, commit_date: \$commit_date, message: \$message, build_date: \$build_date}}" \
-      > $GIT_INFO_PATH
+      > "${GIT_INFO_PATH}"
 
 WORKDIR /
 
-ENTRYPOINT [ "/ngen-app/bin/run-ngen-fcst.sh" ]
+ENTRYPOINT ["/bin/bash", "-c", "exec \"${APP_DIR}/bin/run-ngen-fcst.sh\""]
