@@ -12,6 +12,7 @@ import time
 from datetime import datetime, timedelta
 from enum import Enum, auto
 from pathlib import Path
+from typing import Generator
 
 import geopandas as gpd
 import matplotlib.pyplot as plt
@@ -20,7 +21,8 @@ import pandas as pd
 import yaml
 from ewts import Payload, Status
 from ewts.modules import ModuleKey
-from mswm.manager import build_fcst
+from mswm.manager import RealizationBuilder
+from mswm.utils.input_configuration import InputConfig
 
 from nwm_fcst_mgr.consts import PARTITION_CONFIG_FILE_NAME_SUFFIX
 from nwm_fcst_mgr.exceptions import (
@@ -31,8 +33,8 @@ from nwm_fcst_mgr.ngen_cli import NgenCLI
 from nwm_fcst_mgr.utils import (
     OS_ENV_KEY_NGEN_LOG_FILE_PREFIX,
     OS_ENV_KEY_RESULTS_DIR,
-    initialize_logger,
     initialize_hindcast_logger,
+    initialize_logger,
     set_os_env_key,
 )
 
@@ -316,7 +318,7 @@ class ForecastExecutionManager:
             self._stop_ngen()
         self._check_process_returncode()
 
-    def preprocess(self) -> None:
+    def preprocess(self, do_override_log_file_prefix: bool = False) -> None:
         """Preprocess an ngen run, validate some inputs, and set the execution status."""
 
         # Use cached config values
@@ -331,7 +333,7 @@ class ForecastExecutionManager:
             OS_ENV_KEY_RESULTS_DIR, str(self.out_dir), override=False
         )
         set_os_env_key(
-            OS_ENV_KEY_NGEN_LOG_FILE_PREFIX, self.out_dir.name, override=False
+            OS_ENV_KEY_NGEN_LOG_FILE_PREFIX, self.out_dir.name, override=do_override_log_file_prefix
         )
 
         self._status = RunStatus.PREPROCESSED
@@ -673,19 +675,26 @@ def read_troute_output(
     return output
 
 
-def check_hind_intervals(input_path: str, hind_interval: list) -> None:
+def check_hind_intervals(config: str | InputConfig, hind_interval: list) -> None:
     """
     Check that all hindcast intervals fall on valid cycle hours for a given forcing configuration
 
     Parameters
     ----------
-    input_path: str
-        Path to input.config file
+    config: str | InputConfig
+        Path to input.config file or an instance of InputConfig
     hind_interval: list
         List of hindcast intervals in hours
     """
     # Load config file
-    config = load_config(input_path)
+    if isinstance(config, str):
+        config = load_config(config)
+    elif isinstance(config, InputConfig):
+        config = config.model_dump()
+    else:
+        msg = f"Expected config to be either str or InputConfig, but got {type(config)}"
+        logger.critical(msg)
+        raise TypeError(msg)
 
     # Read values from config file
     try:
@@ -756,15 +765,30 @@ def run_forecast(
     logger.info("Ngen run completed")
 
 
-def run_hindcast(input_path, valid_yaml, fcst_run_name, cycle_interval, num_iterations, cold_start_state=None):
+def run_hindcast(
+        config: str | InputConfig,
+        valid_yaml,
+        fcst_run_name,
+        cycle_interval,
+        num_iterations,
+        cold_start_state=None,
+        yield_realizations: bool = False,
+    ) -> None | Generator[RealizationBuilder, None, None]:
     """
     Run hindcast workflow with warm start runs, initial cold start should be run separately
-    Accepts cycle interval and number of intervals for repeated hindcasts
+    Accepts cycle interval and number of intervals for repeated hindcasts.
+
+    If yield_realizations is True, then this function acts as a generator of (built) RealizationBuilder
+    instances, with the assumption that the caller will execute each realization as it is generated,
+    before the next one is generated.
+
+    If yield_realizations is False, then this function builds and runs the realizations sequence itself
+    (which takes significant time to return).
 
     Parameters
     ---------
-    input_path : str
-        Path to input.config file for hindcast
+    config : str | InputConfig
+        Path to input.config file, or an instance of InputConfig
     valid_yaml : str
         Path to validation yaml file from previous run of nwm-cal-mgr
     fcst_run_name : str
@@ -777,11 +801,14 @@ def run_hindcast(input_path, valid_yaml, fcst_run_name, cycle_interval, num_iter
         Path to directory containing state files to load at start of first hindcast
         If provided, will be used for first hindcast cycle (hind_cycle=0)
         Subsequent cycles will use warm start states
+    yield_realizations: bool
+        If True, then this function will act as a generator and will yield each RealizationBuilder
+        instance after constructing it and calling its build_fcst_realization() method.
     """
     # Set up hindcast orchestration logger, initialized once the hindcast root directory is known
     hindcast_logger = None
 
-    # Buffer messages logged before orchestration log's directory is resolvable (before first build_fcst() call)
+    # Buffer messages logged before orchestration log's directory is resolvable (before first rb.build_fcst_realization() call)
     pending_logs = [f'Initializing hindcast runs from: {valid_yaml}']
 
     if valid_yaml is None:
@@ -796,7 +823,7 @@ def run_hindcast(input_path, valid_yaml, fcst_run_name, cycle_interval, num_iter
     hind_interval = list(range(0, num_iterations * cycle_interval, cycle_interval))
 
     # Validate that all hindcast intervals fall on valid cycle hours for this configuration
-    check_hind_intervals(input_path, hind_interval)
+    check_hind_intervals(config, hind_interval)
 
     pending_logs.append(f"Initializing hindcast runs at intervals: {hind_interval}")
 
@@ -806,23 +833,47 @@ def run_hindcast(input_path, valid_yaml, fcst_run_name, cycle_interval, num_iter
     # Initialize previous state to be loaded for warm start
     prev_warm_start_state = cold_start_state
 
+    hind_kwargs_base = {
+        # vvv One of these is replaced later depending on the type of ``config``.
+        "input_path": None,
+        "config_overrides": None,
+        # ^^^ One of these is replaced later depending on the type of ``config``.
+        "valid_yaml": valid_yaml,
+        "fcst_run_name": fcst_run_name,
+    }
+    if isinstance(config, str):
+        hind_kwargs_base["input_path"] = config
+    elif isinstance(config, InputConfig):
+        hind_kwargs_base["config_overrides"] = config
+    else:
+        msg = f"Expected config to be either str (path to config file) or InputConfig instance, but got {type(config)}"
+        logger.critical(msg)
+        raise TypeError(msg)
+
     # Loop through hindcast intervals
     for hind_cycle in hind_interval:
 
         # Skip warm start for first hindcast, which will use the cold start state
         if hind_cycle != 0:
-
             hindcast_logger.info(f"Initializing warm start AnA run for hindcast iteration at {hind_cycle} hours")
+            warmstart_kwargs = hind_kwargs_base | {
+                "use_warm_start": True,
+                "hind_cycle": hind_cycle,
+                "prev_hind_cycle": prev_hind_cycle,
+                "save_state": True,
+                "load_state_from": prev_warm_start_state,
+            }
 
             # Generate msw-mgr inputs for warm start run for hindcast iteration
-            warm_start_real_path, warm_start_state = build_fcst(input_path=input_path, valid_yaml=valid_yaml,
-                                                                fcst_run_name=fcst_run_name, use_warm_start=True,
-                                                                hind_cycle=hind_cycle, prev_hind_cycle=prev_hind_cycle,
-                                                                save_state=True, load_state_from=prev_warm_start_state)
+            rb = RealizationBuilder(**warmstart_kwargs)
+            warm_start_real_path, warm_start_state = rb.build_fcst_realization()
             hindcast_logger.info(f"Warm start realization file for hindcast iteration at {hind_cycle} hours written to: {warm_start_real_path}")
 
             # Execute warm start ngen run to generate hindcasting model states
-            run_workflow(warm_start_real_path, config_cache, suppress_output=True)
+            if yield_realizations:
+                yield rb
+            else:
+                run_workflow(warm_start_real_path, config_cache, suppress_output=True)
             hindcast_logger.info(f"Warm start run for hindcast iteration at {hind_cycle} hours completed")
             hindcast_logger.info(f"Warm start state saved to {warm_start_state}")
 
@@ -830,10 +881,7 @@ def run_hindcast(input_path, valid_yaml, fcst_run_name, cycle_interval, num_iter
             prev_warm_start_state = warm_start_state
 
         # Create hindcast input files
-        hind_kwargs = {
-            'input_path': input_path,
-            'valid_yaml': valid_yaml,
-            'fcst_run_name': fcst_run_name,
+        hind_kwargs = hind_kwargs_base | {
             'use_hindcast': True,
             'hind_cycle': hind_cycle
         }
@@ -854,9 +902,10 @@ def run_hindcast(input_path, valid_yaml, fcst_run_name, cycle_interval, num_iter
             hind_kwargs['load_state_from'] = warm_start_state
             hindcast_logger.info(f"Hindcast iteration at {hind_cycle} hours loading state from: {warm_start_state}")
 
-        hind_real_path, _ = build_fcst(**hind_kwargs)
+        rb = RealizationBuilder(**hind_kwargs)
+        hind_real_path, _ = rb.build_fcst_realization()
 
-        # Initialize hindcast orchestration logger after first build_fcst() call; hindcast root directory now resolvable
+        # Initialize hindcast orchestration logger after first rb.build_fcst_realization() call; hindcast root directory now resolvable
         if hindcast_logger is None:
             hindcast_root = Path(hind_real_path).parent.parent
             hindcast_logger = initialize_hindcast_logger(str(hindcast_root))
@@ -867,7 +916,10 @@ def run_hindcast(input_path, valid_yaml, fcst_run_name, cycle_interval, num_iter
         hindcast_logger.info(f'Hindcast realization file for iteration at {hind_cycle} hours written to: {hind_real_path}')
 
         # Run hindcasting period
-        run_workflow(hind_real_path, config_cache)
+        if yield_realizations:
+            yield rb
+        else:
+            run_workflow(hind_real_path, config_cache)
         hindcast_logger.info(f"Hindcast run for iteration at {hind_cycle} hours completed")
 
         # Store previous hindcast cycle value to set next warm start duration
@@ -910,7 +962,7 @@ def main():
     if args.command == "run_forecast":
         run_forecast(real_path=args.real_path, valid_yaml=args.valid_yaml, no_valid=args.no_valid, partition_file=args.partition_file)
     elif args.command == "run_hindcast":
-        run_hindcast(valid_yaml=args.valid_yaml, input_path=args.input_path,
+        run_hindcast(valid_yaml=args.valid_yaml, config=args.input_path,
                      fcst_run_name=args.fcst_run_name, cycle_interval=args.cycle_interval,
                      num_iterations=args.num_iterations, cold_start_state=args.cold_start_state)
     else:
