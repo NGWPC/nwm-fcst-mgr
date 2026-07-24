@@ -408,7 +408,13 @@ class ForecastExecutionManager:
         if not suppress_output:
 
             # read troute output file
-            outfile = glob.glob(f"{run_output_dir}/troute*.nc")[0]
+            outfiles = glob.glob(f"{run_output_dir}/troute_output*.nc")
+            if len(outfiles) > 1:
+                msg = f"More than 1 troute_output file found in output directory: {run_output_dir}"
+                logger.critical(msg)
+                raise ValueError(msg)
+            outfile = outfiles[0]
+
             logger.info(f"Reading T-route output file: {outfile}")
             output = read_troute_output(self.gage0, self.valid_config["model"]["crosswalk"], self.gpkg_cats, outfile)
 
