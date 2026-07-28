@@ -8,6 +8,7 @@ on:
       - main
       - nwm-main
       - development
+      - development-pw
       - release-candidate
   push:
     branches:
@@ -16,6 +17,7 @@ on:
       - main
       - nwm-main
       - development
+      - development-pw
       - release-candidate
   workflow_dispatch:
     inputs:
@@ -68,6 +70,7 @@ jobs:
       alias_tag: ${{ steps.vars.outputs.alias_tag }}
       clean_ref: ${{ steps.vars.outputs.clean_ref }}
       default_ref: ${{ steps.vars.outputs.default_ref }}
+      default_base_tag: ${{ steps.vars.outputs.default_base_tag }}
       ngen_image_digest: ${{ steps.vars.outputs.ngen_image_digest }}
       ngen_image_revision: ${{ steps.vars.outputs.ngen_image_revision }}
       ewts_revision: ${{ steps.vars.outputs.ewts_revision }}
@@ -104,16 +107,27 @@ jobs:
           SHORT_SHA="${REAL_SHA:0:7}"
 
           # default source-repo ref: follow the release-line branch we're building from
-          # (development / ngwpc-candidate / ngwpc-release); tags and other branches fall
-          # back to development. Override per source repo via the *_REF dispatch inputs.
+          # (development / development-pw / ngwpc-candidate / ngwpc-release); tags and
+          # other branches fall back to development. Override per source repo via the
+          # *_REF dispatch inputs.
           case "${GITHUB_REF_TYPE}:${GITHUB_REF_NAME}" in
-            branch:development|branch:ngwpc-candidate|branch:ngwpc-release)
+            branch:development|branch:development-pw|branch:ngwpc-candidate|branch:ngwpc-release)
               DEFAULT_REF="$GITHUB_REF_NAME" ;;
             *)
               DEFAULT_REF="development" ;;
           esac
           # use an explicit *_REF input if provided, else DEFAULT_REF
           ref_or_default() { [ -n "$1" ] && echo "$1" || echo "$DEFAULT_REF"; }
+
+          # base-image alias follows the lane: development-pw (or a PR into it) pulls
+          # the rocky 'latest-pw' alias, every other ref the bookworm 'latest'. An
+          # explicit NGEN_IMAGE_TAG input always wins over this default.
+          LANE_REF="${GITHUB_BASE_REF:-$GITHUB_REF_NAME}"
+          if [ "$LANE_REF" = "development-pw" ]; then
+            DEFAULT_BASE_TAG="latest-pw"
+          else
+            DEFAULT_BASE_TAG="latest"
+          fi
 
           # logic for the tags:
           # test_image_tag (commit short sha): used for the initial build and test
@@ -140,7 +154,8 @@ jobs:
           fi
 
           # base image (ngen) metadata for Dockerfile labels
-          NGEN_IMAGE_TAG="${{ inputs.NGEN_IMAGE_TAG || 'latest' }}"
+          NGEN_IMAGE_TAG="${{ inputs.NGEN_IMAGE_TAG }}"
+          NGEN_IMAGE_TAG="${NGEN_IMAGE_TAG:-$DEFAULT_BASE_TAG}"
           NGEN_IMAGE="ghcr.io/${ORG}/ngen:${NGEN_IMAGE_TAG}"
           NGEN_INSPECT=$(skopeo inspect --override-os linux --override-arch amd64 "docker://${NGEN_IMAGE}" 2>/dev/null || echo '{}')
           NGEN_IMAGE_DIGEST=$(echo "$NGEN_INSPECT" | jq -r '.Digest // "unknown"')
@@ -174,6 +189,7 @@ jobs:
           commit_sha_short=${SHORT_SHA}
           clean_ref=${CLEAN_REF}
           default_ref=${DEFAULT_REF}
+          default_base_tag=${DEFAULT_BASE_TAG}
           ngen_image_digest=${NGEN_IMAGE_DIGEST}
           ngen_image_revision=${NGEN_IMAGE_REVISION}
           ewts_revision=${EWTS_REVISION}
@@ -236,7 +252,7 @@ jobs:
           tags: ${{ needs.setup.outputs.image_base }}:${{ needs.setup.outputs.test_image_tag }}
           build-args: |
             GHCR_ORG=${{ inputs.GHCR_ORG || needs.setup.outputs.org }}
-            NGEN_IMAGE=ghcr.io/${{ needs.setup.outputs.org }}/ngen:${{ inputs.NGEN_IMAGE_TAG || 'latest' }}
+            NGEN_IMAGE=ghcr.io/${{ needs.setup.outputs.org }}/ngen:${{ inputs.NGEN_IMAGE_TAG || needs.setup.outputs.default_base_tag }}
             NGEN_IMAGE_DIGEST=${{ needs.setup.outputs.ngen_image_digest }}
             NGEN_IMAGE_REVISION=${{ needs.setup.outputs.ngen_image_revision }}
             EWTS_ORG=${{ inputs.EWTS_ORG || github.repository_owner }}
@@ -341,13 +357,23 @@ jobs:
             --all \
             "docker://${IMAGE_BASE}:${TEST_TAG}" "docker://${IMAGE_BASE}:${ALIAS_TAG}"
 
-          # tag with 'latest' on development branch
+          # Branch-keyed promotion: development promotes 'latest' (bookworm/AWS
+          # lane); development-pw promotes 'latest-pw' (rocky/PW lane). Do not
+          # manually dispatch a cross-lane build from either branch: promotion
+          # keys off the branch name, so the tested image would promote under
+          # the wrong alias.
           if [ "$GITHUB_REF_NAME" = "development" ]; then
             skopeo copy \
               --src-creds "${{ github.actor }}:${{ secrets.GITHUB_TOKEN }}" \
               --dest-creds "${{ github.actor }}:${{ secrets.GITHUB_TOKEN }}" \
               --all \
               "docker://${IMAGE_BASE}:${TEST_TAG}" "docker://${IMAGE_BASE}:latest"
+          elif [ "$GITHUB_REF_NAME" = "development-pw" ]; then
+            skopeo copy \
+              --src-creds "${{ github.actor }}:${{ secrets.GITHUB_TOKEN }}" \
+              --dest-creds "${{ github.actor }}:${{ secrets.GITHUB_TOKEN }}" \
+              --all \
+              "docker://${IMAGE_BASE}:${TEST_TAG}" "docker://${IMAGE_BASE}:latest-pw"
           fi
 
   # Build the Apptainer .sif from the tested + promoted image and publish it to
