@@ -3,7 +3,8 @@
 ############################################################################
 # Change/Verify these values when adopting this Dockerfile into another org:
 #   GH_ORG, GHCR_ORG, IMAGE_NAMESPACE, APP_DIR,
-#   MSW_MGR_ORG, MSW_MGR_REF, EWTS_ORG, EWTS_REF
+#   MSW_MGR_ORG, MSW_MGR_REF, EWTS_ORG, EWTS_REF,
+#   USE_EWTS, EWTS_CACHE_BUST
 ############################################################################
 
 # Ownership / branding overrides
@@ -62,25 +63,29 @@ ARG APP_DIR
 
 # OCI Metadata Arguments
 #
-# BASE_IMAGE_* refers to the ngen image this image is built FROM.
-ARG BASE_IMAGE_DIGEST="unknown"
-ARG BASE_IMAGE_REVISION="unknown"
+# NGEN_IMAGE_* refers to the ngen image this image is built FROM.
+ARG NGEN_IMAGE_DIGEST="unknown"
+ARG NGEN_IMAGE_REVISION="unknown"
 ARG IMAGE_SOURCE="unknown"
 ARG IMAGE_VENDOR="unknown"
 ARG IMAGE_VERSION="unknown"
 ARG IMAGE_REVISION="unknown"
+ARG EWTS_REVISION="unknown"
 ARG MSW_MGR_REVISION="unknown"
 
 # Image Labels: OCI-spec annotations followed by custom source-repo metadata.
 LABEL org.opencontainers.image.base.name="${NGEN_IMAGE}" \
-    org.opencontainers.image.base.digest="${BASE_IMAGE_DIGEST}" \
+    org.opencontainers.image.base.digest="${NGEN_IMAGE_DIGEST}" \
     org.opencontainers.image.source="${IMAGE_SOURCE}" \
     org.opencontainers.image.vendor="${IMAGE_VENDOR}" \
     org.opencontainers.image.version="${IMAGE_VERSION}" \
     org.opencontainers.image.revision="${IMAGE_REVISION}" \
     org.opencontainers.image.title="NGEN Forecast/Hindcast Manager" \
     org.opencontainers.image.description="Docker image for the NGEN Forecast/Hindcast application" \
-    io.${IMAGE_NAMESPACE}.image.base.revision="${BASE_IMAGE_REVISION}" \
+    io.${IMAGE_NAMESPACE}.image.base.revision="${NGEN_IMAGE_REVISION}" \
+    io.${IMAGE_NAMESPACE}.ewts.org="${EWTS_ORG}" \
+    io.${IMAGE_NAMESPACE}.ewts.ref="${EWTS_REF}" \
+    io.${IMAGE_NAMESPACE}.ewts.revision="${EWTS_REVISION}" \
     io.${IMAGE_NAMESPACE}.msw.mgr.org="${MSW_MGR_ORG}" \
     io.${IMAGE_NAMESPACE}.msw.mgr.ref="${MSW_MGR_REF}" \
     io.${IMAGE_NAMESPACE}.msw.mgr.revision="${MSW_MGR_REVISION}"
