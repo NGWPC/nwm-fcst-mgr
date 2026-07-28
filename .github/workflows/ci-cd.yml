@@ -432,3 +432,18 @@ jobs:
           # oras:// (not docker://). The in-VPC staging step pulls this onto EFS.
           apptainer push nwm-fcst-mgr.sif "oras://${SIF_REPO}:${ALIAS_TAG}"
           echo "Published oras://${SIF_REPO}:${ALIAS_TAG}"
+
+          # Branch-keyed SIF promotion, mirroring the image promotion above:
+          # development also publishes ':latest', development-pw ':latest-pw'.
+          # The registry already holds the SIF blob from the push above, so this
+          # re-push uploads only the manifest and tag, not the multi-GB SIF. Do
+          # not manually dispatch a cross-lane build from either branch:
+          # promotion keys off the branch name, so the SIF would promote under
+          # the wrong alias.
+          if [ "$GITHUB_REF_NAME" = "development" ]; then
+            apptainer push nwm-fcst-mgr.sif "oras://${SIF_REPO}:latest"
+            echo "Promoted oras://${SIF_REPO}:latest"
+          elif [ "$GITHUB_REF_NAME" = "development-pw" ]; then
+            apptainer push nwm-fcst-mgr.sif "oras://${SIF_REPO}:latest-pw"
+            echo "Promoted oras://${SIF_REPO}:latest-pw"
+          fi
