@@ -380,7 +380,7 @@ jobs:
   # GHCR as an OCI artifact (oras://). AWS PCS compute nodes pull this onto the
   # shared EFS and run it with `apptainer run`. SIF images are NOT baked into the
   # compute AMI. The AMI carries only the Apptainer runtime; the images ship here
-  # and are staged on EFS. See nwm-ngencerf-infra-learning/docs/design-decisions.md.
+  # and are staged on EFS.
   build-sif:
     name: build-sif
     # Only on real branch builds (push) or manual dispatch, not PRs (a multi-GB
