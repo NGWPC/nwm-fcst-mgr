@@ -210,4 +210,4 @@ RUN set -eux; \
 
 WORKDIR /
 
-ENTRYPOINT ["/bin/bash", "-c", "exec \"${APP_DIR}/bin/run-ngen-fcst.sh\""]
+ENTRYPOINT ["/bin/bash", "-c", "exec \"${APP_DIR}/bin/run-ngen-fcst.sh\" \"$@\"", "--"]
