@@ -133,7 +133,7 @@ python -m nwm_fcst_mgr run_hindcast \
 ```python
 from nwm_fcst_mgr.forecast import run_hindcast
 
-run_hindcast(
+for _ in run_hindcast(
     valid_yaml='/path/to/valid.yaml',
     config='/path/to/input.config',
     fcst_run_name='my_hindcast_run',
@@ -141,7 +141,8 @@ run_hindcast(
     num_iterations=10,
     cold_start_state='/path/to/cold_start_state/',
     yield_realizations=False,
-)
+):
+    pass
 ```
 
 #### Arguments
@@ -151,7 +152,9 @@ run_hindcast(
 - `cycle_interval` - Cycle interval in hours (spacing between hindcast cycles)
 - `num_iterations` - Number of hindcast cycles to perform
 - `cold_start_state` - (Optional) Path to cold start state to initialize hindcasting workflow
-- `yield_realizations` - (Optional) Default False. If True, then this function will act as a generator and will yield each RealizationBuilder instance after constructing it and calling its build_fcst_realization() method. If False, this function itself will execute each ngen realization of the hindcast sequence as they become built.
+- `yield_realizations` - (Optional) Default False. If True, then this generator will yield each RealizationBuilder instance after constructing it
+        and calling its build_fcst_realization() method, so the caller can execute the realization.
+        If False, then this generator will yield None, and consuming it will instead execute each RealizationBuilder instance itself.
 
 
 #### Hindcast Example

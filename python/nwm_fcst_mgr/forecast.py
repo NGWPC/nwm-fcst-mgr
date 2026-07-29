@@ -779,17 +779,22 @@ def run_hindcast(
         num_iterations,
         cold_start_state=None,
         yield_realizations: bool = False,
-    ) -> None | Generator[RealizationBuilder, None, None]:
+    ) -> Generator[RealizationBuilder | None, None, None]:
     """
+    WARNING: this is a generator so it should be fully consumed (iterated over) regardless of the provided
+    value for `yield_realizations`.
+
     Run hindcast workflow with warm start runs, initial cold start should be run separately
     Accepts cycle interval and number of intervals for repeated hindcasts.
 
-    If yield_realizations is True, then this function acts as a generator of (built) RealizationBuilder
-    instances, with the assumption that the caller will execute each realization as it is generated,
-    before the next one is generated.
+    When `yield_realizations` is True, the realizations are built and yielded without being executed.
+    They are yielded on the fly for the caller to execute them, e.g. in the nwm-rte use case.
 
-    If yield_realizations is False, then this function builds and runs the realizations sequence itself
-    (which takes significant time to return).
+    When `yield_realizations` is False, the realizations are built and then executed in sequence as the
+    generator is consumed, i.e. the caller does not need to manually execute the realizations. In this mode,
+    None is yielded instead of the built realizations being yielded.
+    Note that in this mode, the caller must still consume (iterate over) the generator,
+    otherwise the realizations will not execute.
 
     Parameters
     ---------
@@ -808,8 +813,9 @@ def run_hindcast(
         If provided, will be used for first hindcast cycle (hind_cycle=0)
         Subsequent cycles will use warm start states
     yield_realizations: bool
-        If True, then this function will act as a generator and will yield each RealizationBuilder
-        instance after constructing it and calling its build_fcst_realization() method.
+        If True, then this generator will yield each RealizationBuilder instance after constructing it
+            and calling its build_fcst_realization() method, so the caller can execute the realization.
+        If False, then this generator will yield None, and consuming it will instead execute each RealizationBuilder instance itself.
     """
     # Set up hindcast orchestration logger, initialized once the hindcast root directory is known
     hindcast_logger = None
@@ -968,9 +974,11 @@ def main():
     if args.command == "run_forecast":
         run_forecast(real_path=args.real_path, valid_yaml=args.valid_yaml, no_valid=args.no_valid, partition_file=args.partition_file)
     elif args.command == "run_hindcast":
-        run_hindcast(valid_yaml=args.valid_yaml, config=args.input_path,
-                     fcst_run_name=args.fcst_run_name, cycle_interval=args.cycle_interval,
-                     num_iterations=args.num_iterations, cold_start_state=args.cold_start_state)
+        # run_hindcast is a generator, it must be consumed whether yield_realizations is True or False.
+        for _ in run_hindcast(valid_yaml=args.valid_yaml, config=args.input_path,
+                              fcst_run_name=args.fcst_run_name, cycle_interval=args.cycle_interval,
+                              num_iterations=args.num_iterations, cold_start_state=args.cold_start_state):
+            pass
     else:
         raise ValueError(f"Unexpected command: {args.command}. Use either 'run_forecast', o r'run_hindcast'")
 
