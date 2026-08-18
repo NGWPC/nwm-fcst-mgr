@@ -8,6 +8,7 @@ on:
       - main
       - nwm-main
       - development
+      - development-pw
       - release-candidate
   push:
     branches:
@@ -16,6 +17,7 @@ on:
       - main
       - nwm-main
       - development
+      - development-pw
       - release-candidate
   workflow_dispatch:
     inputs:
@@ -67,8 +69,12 @@ jobs:
       test_image_tag: ${{ steps.vars.outputs.test_image_tag }}
       alias_tag: ${{ steps.vars.outputs.alias_tag }}
       clean_ref: ${{ steps.vars.outputs.clean_ref }}
+      default_ref: ${{ steps.vars.outputs.default_ref }}
+      default_base_tag: ${{ steps.vars.outputs.default_base_tag }}
       ngen_image_digest: ${{ steps.vars.outputs.ngen_image_digest }}
       ngen_image_revision: ${{ steps.vars.outputs.ngen_image_revision }}
+      ewts_revision: ${{ steps.vars.outputs.ewts_revision }}
+      msw_mgr_revision: ${{ steps.vars.outputs.msw_mgr_revision }}
     steps:
       - name: Compute image vars
         id: vars
@@ -100,6 +106,29 @@ jobs:
           CLEAN_REF=$(echo "$REAL_REF" | tr '[:upper:]' '[:lower:]' | sed 's/\//-/g')
           SHORT_SHA="${REAL_SHA:0:7}"
 
+          # default source-repo ref: follow the release-line branch we're building from
+          # (development / development-pw / ngwpc-candidate / ngwpc-release); tags and
+          # other branches fall back to development. Override per source repo via the
+          # *_REF dispatch inputs.
+          case "${GITHUB_REF_TYPE}:${GITHUB_REF_NAME}" in
+            branch:development|branch:development-pw|branch:ngwpc-candidate|branch:ngwpc-release)
+              DEFAULT_REF="$GITHUB_REF_NAME" ;;
+            *)
+              DEFAULT_REF="development" ;;
+          esac
+          # use an explicit *_REF input if provided, else DEFAULT_REF
+          ref_or_default() { [ -n "$1" ] && echo "$1" || echo "$DEFAULT_REF"; }
+
+          # base-image alias follows the lane: development-pw (or a PR into it) pulls
+          # the rocky 'latest-pw' alias, every other ref the bookworm 'latest'. An
+          # explicit NGEN_IMAGE_TAG input always wins over this default.
+          LANE_REF="${GITHUB_BASE_REF:-$GITHUB_REF_NAME}"
+          if [ "$LANE_REF" = "development-pw" ]; then
+            DEFAULT_BASE_TAG="latest-pw"
+          else
+            DEFAULT_BASE_TAG="latest"
+          fi
+
           # logic for the tags:
           # test_image_tag (commit short sha): used for the initial build and test
           # alias_tag: used for final tagging on successful tests
@@ -125,22 +154,47 @@ jobs:
           fi
 
           # base image (ngen) metadata for Dockerfile labels
-          NGEN_IMAGE_TAG="${{ inputs.NGEN_IMAGE_TAG || 'latest' }}"
+          NGEN_IMAGE_TAG="${{ inputs.NGEN_IMAGE_TAG }}"
+          NGEN_IMAGE_TAG="${NGEN_IMAGE_TAG:-$DEFAULT_BASE_TAG}"
           NGEN_IMAGE="ghcr.io/${ORG}/ngen:${NGEN_IMAGE_TAG}"
-          NGEN_INSPECT=$(skopeo inspect "docker://${NGEN_IMAGE}" 2>/dev/null || echo '{}')
+          NGEN_INSPECT=$(skopeo inspect --override-os linux --override-arch amd64 "docker://${NGEN_IMAGE}" 2>/dev/null || echo '{}')
           NGEN_IMAGE_DIGEST=$(echo "$NGEN_INSPECT" | jq -r '.Digest // "unknown"')
           NGEN_IMAGE_REVISION=$(echo "$NGEN_INSPECT" | jq -r '.Labels["org.opencontainers.image.revision"] // "unknown"')
 
+          # resolve each source repo's ref (branch/tag/SHA) to its commit SHA for revision labels
+          resolve_sha() {
+            local url="$1" ref="$2" out sha
+            # a full 40-char SHA can't be looked up via ls-remote; use it directly
+            if [[ "$ref" =~ ^[0-9a-f]{40}$ ]]; then echo "$ref"; return; fi
+            out=$(git ls-remote "$url" "$ref" "refs/tags/${ref}^{}" 2>/dev/null)
+            # prefer the dereferenced commit (^{}) for annotated tags; else first match
+            sha=$(echo "$out" | grep '\^{}$' | head -n1 | cut -f1)
+            [ -z "$sha" ] && sha=$(echo "$out" | head -n1 | cut -f1)
+            echo "${sha:-unknown}"
+          }
+
+          # Each *_REVISION is the dependency's resolved commit SHA: it labels the
+          # image AND doubles as the per-dependency cache-bust build-arg, so a new
+          # commit on the requested ref reinstalls that dep instead of a stale cache.
+          EWTS_REVISION=$(resolve_sha "https://github.com/${{ inputs.EWTS_ORG || github.repository_owner }}/nwm-ewts.git" "$(ref_or_default "${{ inputs.EWTS_REF }}")")
+          MSW_MGR_REVISION=$(resolve_sha "https://github.com/${{ inputs.MSW_MGR_ORG || github.repository_owner }}/nwm-msw-mgr.git" "$(ref_or_default "${{ inputs.MSW_MGR_REF }}")")
+
           # save outputs
-          echo "org=${ORG}" >> "$GITHUB_OUTPUT"
-          echo "image_base=${IMAGE_BASE}" >> "$GITHUB_OUTPUT"
-          echo "test_image_tag=${TEST_TAG}" >> "$GITHUB_OUTPUT"
-          echo "alias_tag=${ALIAS}" >> "$GITHUB_OUTPUT"
-          echo "commit_sha=${REAL_SHA}" >> "$GITHUB_OUTPUT"
-          echo "commit_sha_short=${SHORT_SHA}" >> "$GITHUB_OUTPUT"
-          echo "clean_ref=${CLEAN_REF}" >> "$GITHUB_OUTPUT"
-          echo "ngen_image_digest=${NGEN_IMAGE_DIGEST}" >> "$GITHUB_OUTPUT"
-          echo "ngen_image_revision=${NGEN_IMAGE_REVISION}" >> "$GITHUB_OUTPUT"
+          cat >> "$GITHUB_OUTPUT" <<EOF
+          org=${ORG}
+          image_base=${IMAGE_BASE}
+          test_image_tag=${TEST_TAG}
+          alias_tag=${ALIAS}
+          commit_sha=${REAL_SHA}
+          commit_sha_short=${SHORT_SHA}
+          clean_ref=${CLEAN_REF}
+          default_ref=${DEFAULT_REF}
+          default_base_tag=${DEFAULT_BASE_TAG}
+          ngen_image_digest=${NGEN_IMAGE_DIGEST}
+          ngen_image_revision=${NGEN_IMAGE_REVISION}
+          ewts_revision=${EWTS_REVISION}
+          msw_mgr_revision=${MSW_MGR_REVISION}
+          EOF
 
   # CodeQL scan
   codeql-scan:
@@ -198,13 +252,17 @@ jobs:
           tags: ${{ needs.setup.outputs.image_base }}:${{ needs.setup.outputs.test_image_tag }}
           build-args: |
             GHCR_ORG=${{ inputs.GHCR_ORG || needs.setup.outputs.org }}
-            NGEN_IMAGE_TAG=${{ inputs.NGEN_IMAGE_TAG || 'latest' }}
-            BASE_IMAGE_DIGEST=${{ needs.setup.outputs.ngen_image_digest }}
-            BASE_IMAGE_REVISION=${{ needs.setup.outputs.ngen_image_revision }}
+            NGEN_IMAGE=ghcr.io/${{ needs.setup.outputs.org }}/ngen:${{ inputs.NGEN_IMAGE_TAG || needs.setup.outputs.default_base_tag }}
+            NGEN_IMAGE_DIGEST=${{ needs.setup.outputs.ngen_image_digest }}
+            NGEN_IMAGE_REVISION=${{ needs.setup.outputs.ngen_image_revision }}
             EWTS_ORG=${{ inputs.EWTS_ORG || github.repository_owner }}
-            EWTS_REF=${{ inputs.EWTS_REF || 'development' }}
+            EWTS_REF=${{ inputs.EWTS_REF || needs.setup.outputs.default_ref }}
+            EWTS_REVISION=${{ needs.setup.outputs.ewts_revision }}
+            EWTS_CACHE_BUST=${{ needs.setup.outputs.ewts_revision }}
             MSW_MGR_ORG=${{ inputs.MSW_MGR_ORG || github.repository_owner }}
-            MSW_MGR_REF=${{ inputs.MSW_MGR_REF || 'development' }}
+            MSW_MGR_REF=${{ inputs.MSW_MGR_REF || needs.setup.outputs.default_ref }}
+            MSW_MGR_REVISION=${{ needs.setup.outputs.msw_mgr_revision }}
+            MSW_MGR_CACHE_BUST=${{ needs.setup.outputs.msw_mgr_revision }}
             IMAGE_SOURCE=https://github.com/${{ github.repository }}
             IMAGE_VENDOR=${{ github.repository_owner }}
             IMAGE_VERSION=${{ needs.setup.outputs.clean_ref }}
@@ -299,11 +357,93 @@ jobs:
             --all \
             "docker://${IMAGE_BASE}:${TEST_TAG}" "docker://${IMAGE_BASE}:${ALIAS_TAG}"
 
-          # tag with 'latest' on development branch
+          # Branch-keyed promotion: development promotes 'latest' (bookworm/AWS
+          # lane); development-pw promotes 'latest-pw' (rocky/PW lane). Do not
+          # manually dispatch a cross-lane build from either branch: promotion
+          # keys off the branch name, so the tested image would promote under
+          # the wrong alias.
           if [ "$GITHUB_REF_NAME" = "development" ]; then
             skopeo copy \
               --src-creds "${{ github.actor }}:${{ secrets.GITHUB_TOKEN }}" \
               --dest-creds "${{ github.actor }}:${{ secrets.GITHUB_TOKEN }}" \
               --all \
               "docker://${IMAGE_BASE}:${TEST_TAG}" "docker://${IMAGE_BASE}:latest"
+          elif [ "$GITHUB_REF_NAME" = "development-pw" ]; then
+            skopeo copy \
+              --src-creds "${{ github.actor }}:${{ secrets.GITHUB_TOKEN }}" \
+              --dest-creds "${{ github.actor }}:${{ secrets.GITHUB_TOKEN }}" \
+              --all \
+              "docker://${IMAGE_BASE}:${TEST_TAG}" "docker://${IMAGE_BASE}:latest-pw"
+          fi
+
+  # Build the Apptainer .sif from the tested + promoted image and publish it to
+  # GHCR as an OCI artifact (oras://). AWS PCS compute nodes pull this onto the
+  # shared EFS and run it with `apptainer run`. SIF images are NOT baked into the
+  # compute AMI. The AMI carries only the Apptainer runtime; the images ship here
+  # and are staged on EFS.
+  build-sif:
+    name: build-sif
+    # Only on real branch builds (push) or manual dispatch, not PRs (a multi-GB
+    # SIF build on every PR is wasteful). Runs after the image is tested + promoted.
+    if: |
+      (github.event_name == 'push') ||
+      (github.event_name == 'workflow_dispatch')
+    runs-on: ubuntu-latest
+    needs:
+      - setup
+      - promote-tags
+    env:
+      # Keep Apptainer's build temp + layer cache off the small root volume; /mnt
+      # is the roomy ephemeral disk on GitHub-hosted runners (a SIF needs room for
+      # the uncompressed image during mksquashfs).
+      APPTAINER_TMPDIR: /mnt/apptainer-tmp
+      APPTAINER_CACHEDIR: /mnt/apptainer-cache
+    steps:
+      - name: Install Apptainer
+        uses: eWaterCycle/setup-apptainer@v2
+        with:
+          apptainer-version: 1.3.6
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v4
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build .sif from the promoted image and push to GHCR (oras)
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo mkdir -p "$APPTAINER_TMPDIR" "$APPTAINER_CACHEDIR"
+          sudo chown -R "$USER":"$USER" "$APPTAINER_TMPDIR" "$APPTAINER_CACHEDIR"
+
+          IMAGE_BASE="${{ needs.setup.outputs.image_base }}"   # ghcr.io/<org>/nwm-fcst-mgr
+          ALIAS_TAG="${{ needs.setup.outputs.alias_tag }}"     # the tested + promoted tag
+          SIF_REPO="${IMAGE_BASE}-sif"                         # ghcr.io/<org>/nwm-fcst-mgr-sif
+
+          # Convert the promoted OCI image to a SIF. docker/login-action wrote
+          # ~/.docker/config.json, which Apptainer reads for the docker:// pull and
+          # the oras:// push. Unprivileged build uses --fakeroot automatically
+          # (GitHub-hosted runners have unprivileged user namespaces enabled).
+          apptainer build --force nwm-fcst-mgr.sif "docker://${IMAGE_BASE}:${ALIAS_TAG}"
+
+          # Publish as an OCI artifact. A SIF pushed via oras:// MUST be pulled via
+          # oras:// (not docker://). The in-VPC staging step pulls this onto EFS.
+          apptainer push nwm-fcst-mgr.sif "oras://${SIF_REPO}:${ALIAS_TAG}"
+          echo "Published oras://${SIF_REPO}:${ALIAS_TAG}"
+
+          # Branch-keyed SIF promotion, mirroring the image promotion above:
+          # development also publishes ':latest', development-pw ':latest-pw'.
+          # The registry already holds the SIF blob from the push above, so this
+          # re-push uploads only the manifest and tag, not the multi-GB SIF. Do
+          # not manually dispatch a cross-lane build from either branch:
+          # promotion keys off the branch name, so the SIF would promote under
+          # the wrong alias.
+          if [ "$GITHUB_REF_NAME" = "development" ]; then
+            apptainer push nwm-fcst-mgr.sif "oras://${SIF_REPO}:latest"
+            echo "Promoted oras://${SIF_REPO}:latest"
+          elif [ "$GITHUB_REF_NAME" = "development-pw" ]; then
+            apptainer push nwm-fcst-mgr.sif "oras://${SIF_REPO}:latest-pw"
+            echo "Promoted oras://${SIF_REPO}:latest-pw"
           fi
