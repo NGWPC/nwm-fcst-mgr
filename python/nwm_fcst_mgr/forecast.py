@@ -2,7 +2,6 @@ import argparse
 import configparser
 import glob
 import json
-import logging
 import os
 import shutil
 import signal
@@ -32,6 +31,7 @@ from nwm_fcst_mgr.ngen_cli import NgenCLI
 from nwm_fcst_mgr.utils import (
     OS_ENV_KEY_NGEN_LOG_FILE_PREFIX,
     OS_ENV_KEY_RESULTS_DIR,
+    STATUS_LEVEL,
     initialize_hindcast_logger,
     initialize_logger,
     set_os_env_key,
@@ -57,12 +57,6 @@ except ImportError:
         INPROG = "IN_PROGRESS"
         COMPLETE = "COMPLETE"
         ERROR = "ERROR"
-
-    # EWTS registers this level name as a side effect of being imported; since
-    # it isn't importable here, register it ourselves so %(levelname)s shows
-    # "STATUS" instead of "Level 60".
-    STATUS_LEVEL = 60
-    logging.addLevelName(STATUS_LEVEL, "STATUS")
 
 MSG_PAYLOAD_SENTINEL_START = "<MSG_DATA>"
 MSG_PAYLOAD_SENTINEL_END = "</MSG_DATA>"
@@ -809,7 +803,7 @@ def run_hindcast(
         num_iterations,
         cold_start_state=None,
         yield_realizations: bool = False,
-    ) -> Generator[RealizationBuilder | None, None, None]:
+    ) -> None | Generator[RealizationBuilder, None, None]:
     """
     WARNING: this is a generator so it should be fully consumed (iterated over) regardless of the provided
     value for `yield_realizations`.
