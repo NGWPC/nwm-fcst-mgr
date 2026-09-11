@@ -7,6 +7,7 @@ import os
 from os import environ
 from pathlib import Path
 import logging
+import sys
 
 
 OS_ENV_KEY_RESULTS_DIR = "NGEN_RESULTS_DIR"
@@ -58,7 +59,7 @@ def configure_stdout_logging(logger: logging.Logger) -> None:
     logger.setLevel(logging.INFO)
 
     if not logger.handlers:
-        handler = logging.StreamHandler()
+        handler = logging.StreamHandler(sys.stdout)
         handler.setLevel(logging.INFO)
         handler.setFormatter(StdoutStyleFormatter())
         logger.addHandler(handler)
