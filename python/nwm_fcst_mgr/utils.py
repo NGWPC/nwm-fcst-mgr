@@ -13,6 +13,12 @@ OS_ENV_KEY_RESULTS_DIR = "NGEN_RESULTS_DIR"
 OS_ENV_KEY_NGEN_LOG_FILE_PREFIX = "NGEN_LOG_FILE_PREFIX"
 HINDCAST_LOGGER_ID = "HINDCAST"
 
+# Matches the "STATUS" custom level EWTS registers via logging.addLevelName(60, "STATUS")
+# in ewts/logger.py. Defined here (not just conditionally, when EWTS is unavailable) so
+# StdoutStyleFormatter can treat STATUS records like INFO records regardless of whether
+# EWTS itself already registered the level name.
+STATUS_LEVEL = 60
+
 try:
     import ewts
     from ewts.modules import FCST_MGR_ID
@@ -20,6 +26,7 @@ try:
 except ImportError:
     FCST_MGR_ID = "FCSTMGR"
     EWTS_AVAILABLE = False
+    logging.addLevelName(STATUS_LEVEL, "STATUS")
 
 
 class StdoutStyleFormatter(logging.Formatter):
@@ -35,7 +42,7 @@ class StdoutStyleFormatter(logging.Formatter):
     )
 
     def format(self, record):
-        if record.levelno == logging.INFO:
+        if record.levelno in (logging.INFO, STATUS_LEVEL):
             self._style._fmt = self.INFO_FORMAT
         else:
             self._style._fmt = self.DETAILED_FORMAT
@@ -205,25 +212,32 @@ def initialize_hindcast_logger(log_path: str) -> ewts.EwtsLogger | logging.Logge
 
     Arguments
     ---------
-    log_path: Directory to write hindcast log (hindcast run's root folder). Unused if
-        EWTS is unavailable, since no file is written in that case.
+    log_path: Directory to write hindcast log (hindcast run's root folder).
 
     Returns
     -------
     ewts.EwtsLogger | logging.Logger
-        Instance of the EWTS logger, or a plain Python logger writing to stdout only
-        if EWTS is unavailable.
+        Instance of the EWTS logger, or a plain Python logger writing to a file
+        under log_path if EWTS is unavailable.
     '''
-    if not EWTS_AVAILABLE:
-        logger = logging.getLogger(HINDCAST_LOGGER_ID)
-        configure_stdout_logging(logger)
-        return logger
+    log_file_name = "fcst_mgr_hindcast.log"
 
-    return ewts.logger.setup_logger(
-        HINDCAST_LOGGER_ID,
-        level="INFO",
-        log_dir=Path(log_path),
-        log_file_name="fcst_mgr_hindcast.log",
-        running_in_ngen=False,
-        enabled=True,
-    )
+    if EWTS_AVAILABLE:
+        return ewts.logger.setup_logger(
+            HINDCAST_LOGGER_ID,
+            level="INFO",
+            log_dir=Path(log_path),
+            log_file_name=log_file_name,
+            running_in_ngen=False,
+            enabled=True,
+        )
+
+    log_file_dir = Path(log_path)
+    log_file_path = log_file_dir / log_file_name
+    os.makedirs(log_file_dir, exist_ok=True)
+
+    logger = logging.getLogger(HINDCAST_LOGGER_ID)
+    configure_stdout_logging(logger)
+    _attach_file_handler(logger, log_file_path, "INFO")
+    _remove_console_handlers(logger)
+    return logger
