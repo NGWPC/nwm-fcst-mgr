@@ -19,8 +19,6 @@ import matplotlib.pyplot as plt
 import netCDF4
 import pandas as pd
 import yaml
-from ewts import Payload, Status
-from ewts.modules import ModuleKey
 from mswm.manager import RealizationBuilder
 from mswm.utils.input_configuration import InputConfig
 
@@ -33,12 +31,51 @@ from nwm_fcst_mgr.ngen_cli import NgenCLI
 from nwm_fcst_mgr.utils import (
     OS_ENV_KEY_NGEN_LOG_FILE_PREFIX,
     OS_ENV_KEY_RESULTS_DIR,
+    STATUS_LEVEL,
     initialize_hindcast_logger,
     initialize_logger,
     set_os_env_key,
 )
 
-MODNM = ModuleKey.FCST_MGR.value
+try:
+    from ewts import Payload, Status
+    from ewts.modules import ModuleKey
+    EWTS_AVAILABLE = True
+    MODNM = ModuleKey.FCST_MGR.value
+except ImportError:
+    EWTS_AVAILABLE = False
+    MODNM = "fcst-mgr"
+
+    class Status:
+        """Stand-in for ewts.data_payloads.Status so status names still resolve
+        as attributes when EWTS is unavailable. Values mirror the real
+        ewts.Status StrEnum wire values exactly."""
+        NULL = "NULL"
+        INITTING = "INITIALIZING"
+        INITTED = "INITIALIZED"
+        STARTING = "STARTING"
+        INPROG = "IN_PROGRESS"
+        COMPLETE = "COMPLETE"
+        ERROR = "ERROR"
+
+MSG_PAYLOAD_SENTINEL_START = "<MSG_DATA>"
+MSG_PAYLOAD_SENTINEL_END = "</MSG_DATA>"
+
+
+def log_status(status, msg: str | None = None, prog: float | None = None) -> None:
+    """Emit an EWTS status payload when available; otherwise log an equivalent
+    <MSG_DATA> JSON payload at the STATUS level, byte-matching the format
+    produced by ewts.data_payloads.Payload.json_wrapped (json.dumps(asdict(self)),
+    which always includes all four fields, defaulting to null where unset)."""
+    if EWTS_AVAILABLE:
+        logger.status(Payload(status=status, msg=msg, prog=prog, modnm=MODNM))
+        return
+
+    payload = {"status": str(status), "prog": prog, "msg": msg, "modnm": MODNM}
+    logger.log(
+        STATUS_LEVEL,
+        f"{MSG_PAYLOAD_SENTINEL_START}{json.dumps(payload)}{MSG_PAYLOAD_SENTINEL_END}",
+    )
 
 # Set valid cycle hours for each forecast configuration
 VALID_CYCLE_HOURS = {
@@ -52,10 +89,6 @@ VALID_CYCLE_HOURS = {
 
 # setup the logger
 logger, _ = initialize_logger()
-
-# Set dedicated ewts_id for hindcast orchesetration logger.
-HINDCAST_LOGGER_ID = "hindcast_logger"
-
 
 class ConfigCache:
     """
@@ -138,7 +171,7 @@ class ForecastExecutionManager:
 
         global logger
         logger, self.fcst_mgr_log_file_path = initialize_logger(str(self.out_dir), self.out_dir.name)
-        logger.status(Payload(status=Status.INITTING, modnm=MODNM))
+        log_status(Status.INITTING)
         self.ngen_proc_stdout_stderr_log_file_path = self.out_dir / f"{self.out_dir.name}_ngen_stdout_stderr.log"
 
         self.config_cache = config_cache
@@ -163,7 +196,7 @@ class ForecastExecutionManager:
         # If set to True, then the ngen proc will be sent a SIGTERM
         self._stop_ngen_flag = False
 
-        logger.status(Payload(status=Status.INITTED, modnm=MODNM))
+        log_status(Status.INITTED)
 
     def _handler_sigterm(self, sig, frame):
         logger.info(f"Handling signal: {sig}")
@@ -218,12 +251,9 @@ class ForecastExecutionManager:
             if logger is not None:
                 # If there is an unhandled exception, log an error payload.
                 if sys.exc_info()[0] is not None:
-                    logger.status(
-                        Payload(
-                            status=Status.ERROR,
-                            msg=f"Unhandled exception in ForecastExecutionManager: {sys.exc_info()[1]}",
-                            modnm=MODNM,
-                        )
+                    log_status(
+                        Status.ERROR,
+                        msg=f"Unhandled exception in ForecastExecutionManager: {sys.exc_info()[1]}",
                     )
 
     def _close_log(self):
@@ -297,13 +327,11 @@ class ForecastExecutionManager:
                 pass
             case 0:
                 self._status = RunStatus.EXECUTION_SUCCESS
-                logger.status(
-                    Payload(status=Status.COMPLETE, msg="ngen completed", modnm=MODNM)
-                )
+                log_status(Status.COMPLETE, msg="ngen completed")
             case _:
                 self._status = RunStatus.EXECUTION_FAILED
                 msg = f"Ngen run failed with return code {self.proc.returncode}. Command: {self.cmd}. Cwd: {self.cwd}"
-                logger.status(Payload(status=Status.ERROR, msg=msg, modnm=MODNM))
+                log_status(Status.ERROR, msg=msg)
                 logger.critical(msg)
                 raise NgenCalledProcessError(self.proc.returncode, self.cmd, self.cwd)
 
@@ -343,7 +371,7 @@ class ForecastExecutionManager:
         To interrupt execution: call self.schedule_ngen_stoppage().
         To start a new output log file for the subprocess' stdout+stderr: use "w" instead of default "a+" for log_file_open_mode.
         """
-        logger.status(Payload(status=Status.STARTING, modnm=MODNM))
+        log_status(Status.STARTING)
         if self._status != RunStatus.PREPROCESSED:
             raise RuntimeError(f"Invalid self._status: {self._status} (expected {RunStatus.PREPROCESSED})")
         if log_file_open_mode not in ("a+", "w"):
@@ -370,7 +398,7 @@ class ForecastExecutionManager:
         logger.info(f"Starting ngen via cmd: {self.cmd} from cwd: {self.cwd}")
         self.proc = subprocess.Popen(self.cmd, stdout=self.log_handle, stderr=self.log_handle, shell=False, cwd=self.cwd)
         self._status = RunStatus.EXECUTION_RUNNING
-        logger.status(Payload(status=Status.INPROG, modnm=MODNM))
+        log_status(Status.INPROG)
 
         if wait:
             poll_freq_seconds = 2
@@ -390,9 +418,7 @@ class ForecastExecutionManager:
     def postprocess(self, suppress_output: bool = False) -> None:
         """Postprocess results after ngen finishes running."""
         # TODO could assert that certain csv and nc files exist and are non-empty
-        logger.status(
-            Payload(status=Status.INPROG, msg="starting postprocess", modnm=MODNM)
-        )
+        log_status(Status.INPROG, msg="starting postprocess")
         if self._status != RunStatus.EXECUTION_SUCCESS:
             raise RuntimeError(f"Invalid self._status: {self._status} (expected {RunStatus.EXECUTION_SUCCESS})")
 
@@ -434,9 +460,7 @@ class ForecastExecutionManager:
             logger.info(f"Fcst-mgr NGEN postprocessing outputs saved at: {run_output_dir}")
 
         self._status = RunStatus.POSTPROCESSED
-        logger.status(
-            Payload(status=Status.COMPLETE, msg="finished postprocess", modnm=MODNM)
-        )
+        log_status(Status.COMPLETE, msg="finished postprocess")
 
 
 def search_for_partition_config(realization_file: str) -> str:
@@ -779,7 +803,7 @@ def run_hindcast(
         num_iterations,
         cold_start_state=None,
         yield_realizations: bool = False,
-    ) -> Generator[RealizationBuilder | None, None, None]:
+    ) -> None | Generator[RealizationBuilder, None, None]:
     """
     WARNING: this is a generator so it should be fully consumed (iterated over) regardless of the provided
     value for `yield_realizations`.
