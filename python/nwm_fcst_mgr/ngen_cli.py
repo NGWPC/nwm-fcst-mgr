@@ -7,7 +7,7 @@ import re
 
 class NgenCLI:
     """ngen command-line interface command builder.
-    See for details: https://github.com/NGWPC/ngen/blob/development/README.md"""
+    See for details: https://github.com/NOAA-OWP/ngen/blob/master/README.md"""
 
     def __init__(
         self,

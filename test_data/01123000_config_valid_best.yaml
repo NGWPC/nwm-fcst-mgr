@@ -4,8 +4,8 @@ general:
     algorithm: dds
   name: valid_best
   log: true
-  workdir: /home/jeff.wade/ngwpc/run_ngen/kge_DDS/noah_cfes/01123000
-  yaml_file: /home/jeff.wade/ngwpc/run_ngen/kge_DDS/noah_cfes/01123000/Output/Validation_Run/01123000_config_valid_best.yaml
+  workdir: ~/ngwpc/run_ngen/kge_DDS/noah_cfes/01123000
+  yaml_file: ~/ngwpc/run_ngen/kge_DDS/noah_cfes/01123000/Output/Validation_Run/01123000_config_valid_best.yaml
   start_iteration: 0
   iterations: 2
   restart: 0
@@ -88,11 +88,11 @@ NoahOWP: &id002
   init: 0.9
 model:
   type: ngen
-  binary: /home/jeff.wade/ngwpc/run_ngen/kge_DDS/noah_cfes/01123000/Input/ngen
-  realization: /home/jeff.wade/ngwpc/run_ngen/kge_DDS/noah_cfes/01123000/Output/Validation_Run/01123000_realization_config_bmi_valid_best.json
-  catchments: /home/jeff.wade/ngwpc/run_ngen/kge_DDS/noah_cfes/01123000/Input/gauge_01123000.gpkg
-  nexus: /home/jeff.wade/ngwpc/run_ngen/kge_DDS/noah_cfes/01123000/Input/gauge_01123000.gpkg
-  crosswalk: /home/jeff.wade/ngwpc/run_ngen/kge_DDS/noah_cfes/01123000/Input/01123000_crosswalk.json
+  binary: ~/ngwpc/run_ngen/kge_DDS/noah_cfes/01123000/Input/ngen
+  realization: ~/ngwpc/run_ngen/kge_DDS/noah_cfes/01123000/Output/Validation_Run/01123000_realization_config_bmi_valid_best.json
+  catchments: ~/ngwpc/run_ngen/kge_DDS/noah_cfes/01123000/Input/gauge_01123000.gpkg
+  nexus: ~/ngwpc/run_ngen/kge_DDS/noah_cfes/01123000/Input/gauge_01123000.gpkg
+  crosswalk: ~/ngwpc/run_ngen/kge_DDS/noah_cfes/01123000/Input/01123000_crosswalk.json
   obsflow: null
   strategy: uniform
   params:
