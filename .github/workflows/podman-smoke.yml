@@ -1,0 +1,129 @@
+# .github/workflows/podman-smoke.yml
+# ADDITIVE WORKFLOW: Proves Podman build and smoke verification for nwm-fcst-mgr.
+# Leaves existing .github/workflows/ci-cd.yml and Docker release paths untouched.
+
+name: Podman Build & Smoke (Additive)
+
+on:
+  workflow_dispatch:
+    inputs:
+      push_images:
+        description: "Push test tags (:podman-test) to GHCR"
+        required: true
+        type: boolean
+        default: false
+  pull_request:
+    branches:
+      - development
+    paths:
+      - '.github/workflows/podman-smoke.yml'
+      - 'Dockerfile'
+      - 'docker/**'
+      - 'pyproject.toml'
+      - 'requirements.txt'
+      - 'python/**'
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  podman-build-smoke:
+    name: Podman Build & Smoke (Forecast Mgr)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Verify Preinstalled Podman Environment
+        run: |
+          podman version
+          podman info --format 'OS: {{.Host.Distribution.Distribution}} {{.Host.Distribution.Version}} | Storage: {{.Store.GraphDriverName}}'
+
+      - name: Log in to GitHub Container Registry (for base image pull)
+        run: |
+          echo "${{ secrets.GITHUB_TOKEN }}" | podman login ghcr.io \
+            -u "${{ github.actor }}" --password-stdin
+
+      - name: Build Image with Podman (Docker Format)
+        id: build
+        run: |
+          set -euo pipefail
+          ulimit -n 65535 || true
+          IMAGE_TAG="localhost/nwm-fcst-mgr:podman-test"
+
+          echo "Building ${IMAGE_TAG} using existing Dockerfile with --format docker..."
+          podman build \
+            --ulimit nofile=65535:65535 \
+            --build-arg CI_COMMIT_REF_NAME="${GITHUB_REF_NAME}" \
+            --format docker \
+            -f Dockerfile \
+            -t "${IMAGE_TAG}" \
+            .
+
+          echo "IMAGE_LOCAL=${IMAGE_TAG}" >> "${GITHUB_ENV}"
+
+      - name: Smoke Probe 1 - Entrypoint CLI Help & Usage Check
+        run: |
+          # docker/run-ngen-fcst.sh intentionally exits 1 on --help / -h.
+          # We disable -e during execution to capture the exit code under pipefail.
+          set +e
+          podman run --rm "${IMAGE_LOCAL}" --help 2>&1 | tee entrypoint-smoke.log
+          EXIT_CODE=${PIPESTATUS[0]}
+          set -e
+
+          echo "Entrypoint returned exit code: ${EXIT_CODE}"
+          if [ "${EXIT_CODE}" -ne 1 ]; then
+            echo "ERROR: Expected run-ngen-fcst.sh --help to exit with 1, got ${EXIT_CODE}"
+            exit 1
+          fi
+
+          if ! grep -qi 'Usage:' entrypoint-smoke.log; then
+            echo "ERROR: Expected 'Usage:' text not found in output"
+            exit 1
+          fi
+          echo "Probe 1 Passed: Entrypoint script executable and usage help message verified."
+
+      - name: Smoke Probe 2 - Python Environment & Package Import
+        run: |
+          set -euo pipefail
+          echo "Verifying Python version and packages inside virtual environment..."
+          podman run --rm --entrypoint python "${IMAGE_LOCAL}" --version
+          podman run --rm --entrypoint python "${IMAGE_LOCAL}" \
+            -c "import nwm_fcst_mgr, mswm; print('Probe 2 Passed: nwm_fcst_mgr and mswm imported successfully.')"
+
+      - name: Smoke Probe 3 - Git Provenance Metadata Check
+        run: |
+          set -euo pipefail
+          echo "Verifying provenance metadata file existence and content..."
+          podman run --rm --entrypoint cat "${IMAGE_LOCAL}" /ngen-app/nwm-fcst-mgr_git_info.json
+          podman run --rm --entrypoint test "${IMAGE_LOCAL}" -s /ngen-app/nwm-fcst-mgr_git_info.json
+          echo "Probe 3 Passed: Git provenance metadata file verified."
+
+      - name: Inspect Built OCI Image
+        run: |
+          podman image inspect "${IMAGE_LOCAL}" \
+            --format 'Image ID: {{.Id}} | Digest: {{.Digest}} | Entrypoint: {{.Config.Entrypoint}} | Cmd: {{.Config.Cmd}}'
+
+      - name: Optional GHCR Push (:podman-test only)
+        if: ${{ inputs.push_images }}
+        run: |
+          set -euo pipefail
+          REPO_LOWER=$(echo "${{ github.repository }}" | tr '[:upper:]' '[:lower:]')
+          DEST_BASE="ghcr.io/${REPO_LOWER}"
+          TAG_TEST="${DEST_BASE}:podman-test"
+          TAG_SHA="${DEST_BASE}:${{ github.sha }}-podman-test"
+
+          echo "Publishing test verification tags..."
+          podman tag "${IMAGE_LOCAL}" "${TAG_TEST}"
+          podman tag "${IMAGE_LOCAL}" "${TAG_SHA}"
+
+          podman push "${TAG_TEST}"
+          podman push "${TAG_SHA}"
+
+          echo "Pushed ${TAG_TEST} and ${TAG_SHA}"
+          echo "NOTICE: Production aliases (:latest, branch tags) remain untouched."
