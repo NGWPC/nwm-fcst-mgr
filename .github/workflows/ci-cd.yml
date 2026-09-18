@@ -45,6 +45,10 @@ on:
         description: 'MSW_MGR_REF'
         required: false
         type: string
+      FCST_MGR_TAG_NAME:
+        description: 'FCST_MGR_TAG_NAME (if set, used as the final promoted tag instead of latest/latest-pw)'
+        required: false
+        type: string
 
 permissions:
   contents: read
@@ -75,6 +79,7 @@ jobs:
       ngen_image_revision: ${{ steps.vars.outputs.ngen_image_revision }}
       ewts_revision: ${{ steps.vars.outputs.ewts_revision }}
       msw_mgr_revision: ${{ steps.vars.outputs.msw_mgr_revision }}
+      fcst_mgr_tag_name: ${{ steps.vars.outputs.fcst_mgr_tag_name }}
     steps:
       - name: Compute image vars
         id: vars
@@ -179,6 +184,8 @@ jobs:
           EWTS_REVISION=$(resolve_sha "https://github.com/${{ inputs.EWTS_ORG || github.repository_owner }}/nwm-ewts.git" "$(ref_or_default "${{ inputs.EWTS_REF }}")")
           MSW_MGR_REVISION=$(resolve_sha "https://github.com/${{ inputs.MSW_MGR_ORG || github.repository_owner }}/nwm-msw-mgr.git" "$(ref_or_default "${{ inputs.MSW_MGR_REF }}")")
 
+          FCST_MGR_TAG_NAME="${{ inputs.FCST_MGR_TAG_NAME || '' }}"
+
           # save outputs
           cat >> "$GITHUB_OUTPUT" <<EOF
           org=${ORG}
@@ -194,6 +201,7 @@ jobs:
           ngen_image_revision=${NGEN_IMAGE_REVISION}
           ewts_revision=${EWTS_REVISION}
           msw_mgr_revision=${MSW_MGR_REVISION}
+          fcst_mgr_tag_name=${FCST_MGR_TAG_NAME}
           EOF
 
   # CodeQL scan
@@ -349,6 +357,7 @@ jobs:
           IMAGE_BASE="${{ needs.setup.outputs.image_base }}"
           TEST_TAG="${{ needs.setup.outputs.test_image_tag }}"
           ALIAS_TAG="${{ needs.setup.outputs.alias_tag }}"
+          FCST_MGR_TAG_NAME="${{ needs.setup.outputs.fcst_mgr_tag_name }}"
 
           # apply the primary alias (pr tag or timestamp-branch)
           skopeo copy \
@@ -357,12 +366,20 @@ jobs:
             --all \
             "docker://${IMAGE_BASE}:${TEST_TAG}" "docker://${IMAGE_BASE}:${ALIAS_TAG}"
 
+          # if FCST_MGR_TAG_NAME was provided, use it as the final promoted tag,
+          # bypassing the branch-keyed lane logic below. Otherwise:
           # Branch-keyed promotion: development promotes 'latest' (bookworm/AWS
           # lane); development-pw promotes 'latest-pw' (rocky/PW lane). Do not
           # manually dispatch a cross-lane build from either branch: promotion
           # keys off the branch name, so the tested image would promote under
           # the wrong alias.
-          if [ "$GITHUB_REF_NAME" = "development" ]; then
+          if [ -n "$FCST_MGR_TAG_NAME" ]; then
+            skopeo copy \
+              --src-creds "${{ github.actor }}:${{ secrets.GITHUB_TOKEN }}" \
+              --dest-creds "${{ github.actor }}:${{ secrets.GITHUB_TOKEN }}" \
+              --all \
+              "docker://${IMAGE_BASE}:${TEST_TAG}" "docker://${IMAGE_BASE}:${FCST_MGR_TAG_NAME}"
+          elif [ "$GITHUB_REF_NAME" = "development" ]; then
             skopeo copy \
               --src-creds "${{ github.actor }}:${{ secrets.GITHUB_TOKEN }}" \
               --dest-creds "${{ github.actor }}:${{ secrets.GITHUB_TOKEN }}" \
@@ -420,6 +437,7 @@ jobs:
 
           IMAGE_BASE="${{ needs.setup.outputs.image_base }}"   # ghcr.io/<org>/nwm-fcst-mgr
           ALIAS_TAG="${{ needs.setup.outputs.alias_tag }}"     # the tested + promoted tag
+          FCST_MGR_TAG_NAME="${{ needs.setup.outputs.fcst_mgr_tag_name }}"
           SIF_REPO="${IMAGE_BASE}-sif"                         # ghcr.io/<org>/nwm-fcst-mgr-sif
 
           # Convert the promoted OCI image to a SIF. docker/login-action wrote
@@ -433,6 +451,8 @@ jobs:
           apptainer push nwm-fcst-mgr.sif "oras://${SIF_REPO}:${ALIAS_TAG}"
           echo "Published oras://${SIF_REPO}:${ALIAS_TAG}"
 
+          # if FCST_MGR_TAG_NAME was provided, use it as the final promoted SIF
+          # tag, bypassing the branch-keyed lane logic below. Otherwise:
           # Branch-keyed SIF promotion, mirroring the image promotion above:
           # development also publishes ':latest', development-pw ':latest-pw'.
           # The registry already holds the SIF blob from the push above, so this
@@ -440,7 +460,10 @@ jobs:
           # not manually dispatch a cross-lane build from either branch:
           # promotion keys off the branch name, so the SIF would promote under
           # the wrong alias.
-          if [ "$GITHUB_REF_NAME" = "development" ]; then
+          if [ -n "$FCST_MGR_TAG_NAME" ]; then
+            apptainer push nwm-fcst-mgr.sif "oras://${SIF_REPO}:${FCST_MGR_TAG_NAME}"
+            echo "Promoted oras://${SIF_REPO}:${FCST_MGR_TAG_NAME}"
+          elif [ "$GITHUB_REF_NAME" = "development" ]; then
             apptainer push nwm-fcst-mgr.sif "oras://${SIF_REPO}:latest"
             echo "Promoted oras://${SIF_REPO}:latest"
           elif [ "$GITHUB_REF_NAME" = "development-pw" ]; then
